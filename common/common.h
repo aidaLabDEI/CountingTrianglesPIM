@@ -5,6 +5,15 @@
 
 #define EDGES_IN_BATCH 131072  //8byte * 131072 = 1MB
 
+/*There may be two worst cases.
+1: Each edge connects two new nodes
+2: Each node is connected to the next, creating a "line"
+In both cases, for each edge there is a new unique node, so,
+considering 60MB free in the MRAM for the sample, considering that
+for every edge 24 bytes are occupied, there can be 60MB/24B = 2621440 edges
+*/
+#define MAX_SAMPLE_SIZE 2621440
+
 //Struct used to transfer starting data from the host to the dpus. Aligned to 8 bytes
 typedef struct {
     uint32_t random_seed;
