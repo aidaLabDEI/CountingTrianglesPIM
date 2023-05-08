@@ -46,13 +46,11 @@ int main(int argc, char* argv[]){
 
     uint32_t sample_size_dpus = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
 
-    //Considering the worst case where each edge connects two new nodes. If there are 60MB free in the MRAM,
-    //considering 40bytes occupied by each edge connecting two new nodes, 60MB/40B = 1572864
     //Using -1 with an unsigned integer gives a warning in the compiler. Can be ignored
     if(sample_size_dpus == -1){
-        sample_size_dpus = 1572864;
+        sample_size_dpus = MAX_SAMPLE_SIZE;
     }
-    assert(sample_size_dpus <= 1572864);
+    assert(sample_size_dpus <= MAX_SAMPLE_SIZE);
 
     uint32_t color_number = atoi(argv[3]);  //Number of colors used to color the nodes
 
