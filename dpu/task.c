@@ -17,7 +17,7 @@
 
 //Variables set by the host
 __host dpu_arguments_t DPU_INPUT_ARGUMENTS;  //Frequently used values
-__mram_noinit uint64_t id;  //8 bytes for CPU-DPU transfer
+__host uint64_t id;  //8 bytes for CPU-DPU transfer
 __mram_noinit batch_t batch;
 
 //When the last batch is processed, this variable is set to true. In the next execution
