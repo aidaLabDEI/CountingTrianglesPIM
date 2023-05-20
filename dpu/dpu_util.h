@@ -10,10 +10,6 @@
 //Size of the heap in the WRAM used as buffer for the MRAM
 #define WRAM_BUFFER_SIZE 2048
 
-//Values used to calculate pseudo-random numbers
-#define RANDOM_A 25214903917
-#define RANDOM_C 11
-
 //Contains a pair of colors, representing the colors of an edge
 typedef struct {
     uint32_t color_u;
@@ -38,8 +34,8 @@ typedef struct {
 
 //dpu cannot use the standard library random
 void srand(uint32_t seed);
-uint64_t rand();
-uint64_t rand_range(uint32_t from, uint32_t to);  //from and to are included
+uint32_t rand();
+uint32_t rand_range(uint32_t from, uint32_t to);  //from and to are included
 
 //Determine what triplets will be used by this DPU and set random number seed
 void initial_setup(uint64_t id, triplets_array_t* handled_triplets_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR);
