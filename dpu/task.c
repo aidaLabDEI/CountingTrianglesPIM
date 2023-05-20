@@ -183,8 +183,8 @@ int main() {
             }
 
             //Biased dice roll
-            float u_rand = (float)rand() / ((float)ULONG_MAX+1.0);
-    		double thres = ((float)DPU_INPUT_ARGUMENTS.SAMPLE_SIZE)/total_edges;
+            float u_rand = (float)rand() / ((float)UINT_MAX+1.0);  //UINT_MAX is the maximum value that can be returned by rand()
+    		float thres = ((float)DPU_INPUT_ARGUMENTS.SAMPLE_SIZE)/total_edges;
 
             //Randomly decide if replace or not an edge in the sample
             if (u_rand < thres){

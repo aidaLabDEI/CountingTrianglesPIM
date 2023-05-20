@@ -11,10 +11,10 @@
   ./app seed sample_size nr_colors path_to_graph_file
   ```
   where:
-  
-  - _seed_ is the seed for generating random numbers. Put -1 for a random seed
-  - _sample\_size_ is the size of the sample inside the DPUs. Put -1 for the maximum allowed size
-  - _nr\_colors_ is the number of colors used to color the 
+
+  - _seed_ is the seed for generating random numbers. Put 0 for a random seed
+  - _sample\_size_ is the size of the sample inside the DPUs. Put 0 for the maximum allowed size
+  - _nr\_colors_ is the number of colors used to color the
   - _path\_to\_graph\_file_ is the path to the file containing the edges of the graph.
   Each line of the file must contain an edge composed of two 32-bit integers and a space between the two numbers
 
