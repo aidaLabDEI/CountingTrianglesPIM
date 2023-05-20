@@ -28,8 +28,8 @@ int main(int argc, char* argv[]){
 
     /*ARGUMENTS HANDLING*/
     if(argc < 5){  //First argument is executable
-        printf("Invalid number of arguments. Please insert the seed for the random number generator (-1 for random seed), ");
-        printf("the size of the sample inside the DPUs (number of edges) (-1 for max allowed value), the number of colors to use and ");
+        printf("Invalid number of arguments. Please insert the seed for the random number generator (0 for random seed), ");
+        printf("the size of the sample inside the DPUs (number of edges) (0 for max allowed value), the number of colors to use and ");
         printf("the file name containing all the edges.\n");
         return 1;
     }
@@ -37,7 +37,7 @@ int main(int argc, char* argv[]){
     uint32_t random_seed = atoi(argv[1]);
 
     //Using -1 with an unsigned integer gives a warning in the compiler. Can be ignored
-    if(random_seed == -1){  //Set random seed that depends on time
+    if(random_seed == 0){  //Set random seed that depends on time
         srand(time(NULL));
         random_seed = rand();
     }else{
@@ -47,7 +47,7 @@ int main(int argc, char* argv[]){
     uint32_t sample_size_dpus = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
 
     //Using -1 with an unsigned integer gives a warning in the compiler. Can be ignored
-    if(sample_size_dpus == -1){
+    if(sample_size_dpus == 0){
         sample_size_dpus = MAX_SAMPLE_SIZE;
     }
     assert(sample_size_dpus <= MAX_SAMPLE_SIZE);
@@ -151,10 +151,7 @@ int main(int argc, char* argv[]){
     gettimeofday(&start, 0);
 
     //Launch the DPUs program one last time. The DPUs know that the file has ended and it is time to count the triangles
-    DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
-
-    //Wait for all the DPUs to finish their task
-    DPU_ASSERT(dpu_sync(dpu_set));
+    DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
 
     uint64_t single_dpu_triangle_estimation = 0;
     uint64_t total_triangle_estimation = 0;
