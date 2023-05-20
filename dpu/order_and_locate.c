@@ -50,7 +50,7 @@ void sort_sample(__mram_ptr edge_t* sample, uint32_t start, uint32_t end) {
             i++;  //Increse one level
 
             //If this level(after i++) is bigger than the previous one, swap them (execute before the smaller one. Tail "recursion")
-            //This increases a bit the execution time but it is guaranteed that 2^(max_levels) elements can be ordered
+            //It is guaranteed that 2^(max_levels) elements can be ordered
             if(level_end[i] - level_start[i] > level_end[i-1] - level_start[i-1]){
                 uint32_t temp = level_start[i];
                 level_start[i] = level_start[i-1];
