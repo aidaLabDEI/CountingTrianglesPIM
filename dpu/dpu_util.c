@@ -12,13 +12,13 @@ uint32_t random_previous = 0;
 void srand(uint32_t seed){  //Set seed
     random_previous = seed;
 }
-uint64_t rand(){
-    uint64_t r = RANDOM_A * random_previous + RANDOM_C;
+uint32_t rand(){
+    uint32_t r = 214013 * random_previous + 2531011;  //MS rand
     random_previous = r;
     return r;
 }
 //From and to are included
-uint64_t rand_range(uint32_t from, uint32_t to){
+uint32_t rand_range(uint32_t from, uint32_t to){
     assert(from <= to);
     return (rand() % (to - from + 1) + from);
 }
