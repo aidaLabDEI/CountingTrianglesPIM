@@ -14,11 +14,57 @@
 void sort_sample(__mram_ptr edge_t* sample, uint32_t start, uint32_t end) {
     assert(sample != NULL);
 
-    if (start < end) {
-        uint32_t p = partition(sample, start, end);
+    //Contain the boundaries of the simulated recursion levels
+    //With 32 indexes, 2^32 elements can be ordered
+    int32_t max_levels = 32;
+    uint32_t level_start[32];
+    uint32_t level_end[32];
 
-        sort_sample(sample, start, p);
-        sort_sample(sample, p+1, end);
+    uint32_t local_start, local_end;  //Indexes of the elements inside each simulated recursion
+    int32_t i = 0;  //Simulated recursion level (can be negative)
+
+    level_start[0] = start;  //First simulated recursion spans across all assigned section of the sample
+    level_end[0] = end;
+
+    while (i >= 0) {  ///While there are still some levels to handle
+
+        if(i == max_levels - 1){  //If last available level is reached, the array cannot be ordered
+            assert(false);
+        }
+
+        local_start = level_start[i];  //local start at level i
+        local_end = level_end[i];  //local end at level i
+
+        if (local_start < local_end) {
+
+            //Partition the the array
+            uint32_t p = partition(sample, local_start, local_end);
+
+            //The next level will sort the left section
+            level_start[i+1] = local_start;
+            level_end[i+1] = p;
+
+            //Overwritten the current level. It will sort the right section
+            level_start[i] = p+1;
+
+            i++;  //Increse one level
+
+            //If this level(after i++) is bigger than the previous one, swap them (execute before the smaller one. Tail "recursion")
+            //This increases a bit the execution time but it is guaranteed that 2^(max_levels) elements can be ordered
+            if(level_end[i] - level_start[i] > level_end[i-1] - level_start[i-1]){
+                uint32_t temp = level_start[i];
+                level_start[i] = level_start[i-1];
+                level_start[i-1] = temp;
+
+                temp = level_end[i];
+                level_end[i] = level_end[i-1];
+                level_end[i-1] = temp;
+            }
+
+        } else {
+            //If the level does not need to be ordered, order the level i-1
+            i--;
+        }
     }
 }
 
@@ -28,11 +74,11 @@ uint32_t partition(__mram_ptr edge_t* array, uint32_t start, uint32_t end) {
 
     uint32_t pivot_index = rand_range(start, end-1);  //Pivot choosen at random (end cannot be used with Hoare partition)
     edge_t pivot = array[pivot_index];
-    swap(&array[pivot_index], &array[start]);  //Pivot at the start
 
     int32_t i = start - 1;
     int32_t j = end + 1;
 
+    //Works well because there are no repeated edges (no edge can be equal to the pivot)
     while (true) {
         do{
             i++;
@@ -45,18 +91,12 @@ uint32_t partition(__mram_ptr edge_t* array, uint32_t start, uint32_t end) {
         if(i>=j){
             return j;
         }
-        swap(&array[i], &array[j]);
+
+        //Swap array[i] and array[j]
+        edge_t temp = array[i];
+        array[i] = array[j];
+        array[j]= temp;
     }
-}
-
-//Swap the content inside the cells for in place sorting
-void swap(__mram_ptr edge_t* a, __mram_ptr edge_t* b) {
-    assert(a != NULL);
-    assert(b != NULL);
-
-    edge_t temp = *a;
-    *a = *b;
-    *b = temp;
 }
 
 void tasklet_partition(__mram_ptr edge_t* sample, uint32_t start, uint32_t end, uint32_t nr_tasklets, tasklet_partitions_t* t_partitions_ptr){

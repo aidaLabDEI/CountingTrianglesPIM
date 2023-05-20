@@ -26,10 +26,9 @@ typedef struct{
     uint32_t size;
 }tasklet_partitions_t;
 
-//Using QuickSort for ordering in place
+//Using iterative quickSort for ordering in place without using too much stack
 void sort_sample(__mram_ptr edge_t* sample, uint32_t start, uint32_t end);
 uint32_t partition(__mram_ptr edge_t* array, uint32_t start, uint32_t end);
-void swap(__mram_ptr edge_t* a, __mram_ptr edge_t* b);
 
 //Recursive function for creating partitions
 void tasklet_partition(__mram_ptr edge_t* sample, uint32_t start, uint32_t end, uint32_t nr_tasklets, tasklet_partitions_t* t_partitions_ptr);
