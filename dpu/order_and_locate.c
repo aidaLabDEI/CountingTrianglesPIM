@@ -219,7 +219,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
         }
 
         //Transfer the data to the mram
-        node_loc_t current_node_info = (node_loc_t) {current_node_id, index_in_sample, number_bigger_neighbors, "padd"};  //"padd" for padding to 16bytes
+        node_loc_t current_node_info = (node_loc_t) {current_node_id, index_in_sample, number_bigger_neighbors, 0};  //0 for padding to 16bytes
 
         nodes_loc_buffer_wram[nodes_loc_buffer_index] = current_node_info;
         nodes_loc_buffer_index++;

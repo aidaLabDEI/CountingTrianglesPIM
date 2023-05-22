@@ -11,7 +11,7 @@ typedef struct{
     uint32_t id;
     uint32_t index_in_sample;
     uint32_t number_bigger_neighbors;  //Only the neighbors who have bigger id
-    char padding[4];  //The struct must be 8 byte aligned for MRAM transfers
+    uint32_t padding;  //The struct must be 8 byte aligned for MRAM transfers
 } node_loc_t;
 
 //One partition of the sample where a tasklet will execute QuickSort
