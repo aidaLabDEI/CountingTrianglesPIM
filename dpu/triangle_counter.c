@@ -140,5 +140,5 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
         }
     }
     //Dummy node informations when the node is not present. The only thing that makes this not valid is the number of neighbors at 0
-    return (node_loc_t){0,0,0, "padd"};
+    return (node_loc_t){0,0,0,0};
 }
