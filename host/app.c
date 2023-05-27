@@ -98,7 +98,8 @@ int main(int argc, char* argv[]){
     uint32_t edge_count_batch = 0;
 
     //Contains the edges that need to be transferred to the dpus in a broadcast
-    batch_t batch;
+    //Dynamic memory allocation because batch may not fit inside program stack
+    batch_t* batch = (batch_t*) malloc(sizeof(batch_t));
 
     struct timeval now;
     gettimeofday(&now, 0);
@@ -118,32 +119,35 @@ int main(int argc, char* argv[]){
         }else{
             current_edge = (edge_t){node2, node1};
         }
-        batch.edges_batch[edge_count_batch] = current_edge;
+        batch->edges_batch[edge_count_batch] = current_edge;
 
         edge_count_batch++;
 
         //Enough edges inserted inside this batch, time to send it
         if(edge_count_batch == EDGES_IN_BATCH){
-            batch.size = edge_count_batch;
-            send_batch(dpu_set, &batch);
+            batch->size = edge_count_batch;
+            send_batch(dpu_set, batch);
             edge_count_batch = 0;  //Reset count
         }
     }
 
-    //The file ended, sending the last batch.
+    //The file ended, sending the last batch->
     //If the previous batch contained exactly all the remaining edges,
     //A batch with only (0 0)s is sent.
     assert(edge_count_batch < EDGES_IN_BATCH);
 
-    batch.size = edge_count_batch;
+    batch->size = edge_count_batch;
     //Insert dummy edges to send error in DPUs the program in case of problems
     for(uint32_t i = edge_count_batch; i < EDGES_IN_BATCH; i++){
-        batch.edges_batch[i] = (edge_t){0, 0};
+        batch->edges_batch[i] = (edge_t){0, 0};
     }
 
-    send_batch(dpu_set, &batch);
+    send_batch(dpu_set, batch);
     DPU_ASSERT(dpu_sync(dpu_set));
 
+    //Batch is not used anymore
+    free(batch);
+    
     gettimeofday(&now, 0);
     float sample_creation_time = timedifference_msec(start, now);
 
