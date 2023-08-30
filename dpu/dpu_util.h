@@ -8,7 +8,9 @@
 #include "../common/common.h"
 
 //Size of the heap in the WRAM used as buffer for the MRAM
+#ifndef WRAM_BUFFER_SIZE
 #define WRAM_BUFFER_SIZE 2048
+#endif
 
 //Contains a pair of colors, representing the colors of an edge
 typedef struct {

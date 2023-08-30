@@ -5,7 +5,7 @@
 #include <stdbool.h>  //Booleans
 
 #include "dpu_util.h"
-#include "order_and_locate.h"
+#include "locate_nodes.h"
 
 //Check if the triplet found is handled by this DPU
 bool is_triplet_handled(uint32_t c1, uint32_t c2, uint32_t c3, triplet_t handled_triplet, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR);
