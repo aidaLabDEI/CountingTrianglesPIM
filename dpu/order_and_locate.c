@@ -12,7 +12,6 @@
 
 //end is included
 void sort_sample(__mram_ptr edge_t* sample, uint32_t start, uint32_t end) {
-    assert(sample != NULL);
 
     //Contain the boundaries of the simulated recursion levels
     //With 32 indexes, 2^32 elements can be ordered
@@ -70,7 +69,6 @@ void sort_sample(__mram_ptr edge_t* sample, uint32_t start, uint32_t end) {
 
 //Hoare partitioning
 uint32_t partition(__mram_ptr edge_t* array, uint32_t start, uint32_t end) {
-    assert(array != NULL);
 
     uint32_t pivot_index = rand_range(start, end-1);  //Pivot choosen at random (end cannot be used with Hoare partition)
     edge_t pivot = array[pivot_index];
@@ -100,7 +98,6 @@ uint32_t partition(__mram_ptr edge_t* array, uint32_t start, uint32_t end) {
 }
 
 void tasklet_partition(__mram_ptr edge_t* sample, uint32_t start, uint32_t end, uint32_t nr_tasklets, tasklet_partitions_t* t_partitions_ptr){
-    assert(sample != NULL);
     assert(nr_tasklets <= NR_TASKLETS);
     assert(t_partitions_ptr != NULL);
 
@@ -137,7 +134,6 @@ void tasklet_partition(__mram_ptr edge_t* sample, uint32_t start, uint32_t end, 
 
 //end is excluded (different from QuickSort)
 bool is_ordered_sample(__mram_ptr edge_t* sample, uint32_t start, uint32_t end){
-    assert(sample != NULL);
     assert(start < end);
 
     for(uint32_t i = start+1; i < end; i++){
@@ -154,8 +150,6 @@ bool is_ordered_sample(__mram_ptr edge_t* sample, uint32_t start, uint32_t end){
 }
 
 uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr){
-    assert(sample != NULL);
-    assert(AFTER_SAMPLE_HEAP_POINTER != NULL);
     assert(wram_buffer_ptr != NULL);
 
     uint32_t index = 0;  //Index for traversing the sample

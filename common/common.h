@@ -18,12 +18,12 @@ for every edge 24 bytes are occupied, there can be 60MB/24B = 2621440 edges
 typedef struct {
     uint32_t random_seed;
 
-    uint32_t SAMPLE_SIZE;
-    uint32_t N_COLORS;
+    uint32_t sample_size;
+    uint32_t n_colors;
 
-    uint32_t HASH_PARAMETER_P;
-    uint32_t HASH_PARAMETER_A;
-    uint32_t HASH_PARAMETER_B;
+    uint32_t hash_parameter_p;
+    uint32_t hash_parameter_a;
+    uint32_t hash_parameter_b;
 } dpu_arguments_t;
 
 //Contains the two nodes that make an edge
