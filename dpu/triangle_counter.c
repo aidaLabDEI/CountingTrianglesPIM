@@ -5,7 +5,7 @@
 
 #include "triangle_counter.h"
 #include "dpu_util.h"
-#include "order_and_locate.h"
+#include "locate_nodes.h"
 
 bool is_triplet_handled(uint32_t n1, uint32_t n2, uint32_t n3, triplet_t handled_triplet, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     assert(DPU_INPUT_ARGUMENTS_PTR != NULL);

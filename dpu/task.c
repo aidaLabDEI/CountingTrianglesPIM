@@ -13,7 +13,8 @@
 #include "../common/common.h"
 #include "dpu_util.h"
 #include "triangle_counter.h"
-#include "order_and_locate.h"
+#include "quicksort.h"
+#include "locate_nodes.h"
 
 //Variables set by the host
 __host dpu_arguments_t DPU_INPUT_ARGUMENTS;
@@ -33,6 +34,7 @@ uint32_t edges_in_sample = 0;
 //The batch is overwritten and the sample is moved in the sorting/locating phase
 __mram_ptr batch_t* batch = DPU_MRAM_HEAP_POINTER;
 __mram_ptr edge_t* sample;
+__mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;
 
 //The setup happens only once
 bool is_setup_done = false;
@@ -44,9 +46,6 @@ triplet_t handled_triplet;
 //Edges inside the DPU, removed in the past or not considered by chance.
 //The edges not handled because of the triplets are not counted
 uint32_t total_edges = 0;
-
-//Contains the partition of the sample assigned to each tasklet in the QuickSort
-tasklet_partitions_t t_partitions;
 
 //Number of uniqe nodes in the sample
 uint32_t unique_nodes = 0;
@@ -257,25 +256,19 @@ int main() {
     //If the last batch was the last and the sample is not empty, start counting
     if(is_graph_ended && edges_in_sample > 0){
 
-        if(me() == 0){  //One tasklet creates the partitions for the QuickSort for all tasklets
-            t_partitions.partitions = mem_alloc(NR_TASKLETS * sizeof(partition_t));
-            t_partitions.size = 0;
-            tasklet_partition(sample, 0, edges_in_sample-1, NR_TASKLETS, &t_partitions);
-        }
-
-        barrier_wait(&sync_tasklets);  //Wait for the partitions to be created
-
-        //If there is a partition for a given tasklet. Some tasklets may not have a partition if the sample is small
-        if(me() < t_partitions.size){
-            sort_sample(sample, t_partitions.partitions[me()].start, t_partitions.partitions[me()].end);
-        }
-
+        sort_sample(edges_in_sample, sample, wram_buffer_ptr);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
+        return 0;
+
+        //After the quicksort, some pointers change. Does not matter if set by all tasklets
+        sample = DPU_MRAM_HEAP_POINTER;
+
+        AFTER_SAMPLE_HEAP_POINTER = sample + edges_in_sample*sizeof(edge_t);
 
         if(me() == 0){  //One tasklets finds the locations of the nodes
-            unique_nodes = node_locations(sample, edges_in_sample, DPU_MRAM_HEAP_POINTER, wram_buffer_ptr);
+            unique_nodes = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
         }
-        
+
         barrier_wait(&sync_tasklets);  //Wait for the location finding
 
         //Divide triangle counting between tasklets
@@ -289,7 +282,7 @@ int main() {
             to_edge_sample = edges_in_sample;  //If last tasklet, handle all remaining edges in sample
         }
 
-        int32_t local_triangle_estimation = count_triangles(sample, from_edge_sample, to_edge_sample, handled_triplet, unique_nodes, DPU_MRAM_HEAP_POINTER, wram_buffer_ptr, &DPU_INPUT_ARGUMENTS);
+        int32_t local_triangle_estimation = count_triangles(sample, from_edge_sample, to_edge_sample, handled_triplet, unique_nodes, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr, &DPU_INPUT_ARGUMENTS);
 
         //Add the triangles counted by each tasklet
         mutex_lock(add_triangles);
