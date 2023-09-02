@@ -258,7 +258,6 @@ int main() {
 
         sort_sample(edges_in_sample, sample, wram_buffer_ptr);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
-        return 0;
 
         //After the quicksort, some pointers change. Does not matter if set by all tasklets
         sample = DPU_MRAM_HEAP_POINTER;
