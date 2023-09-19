@@ -262,7 +262,7 @@ int main() {
         //After the quicksort, some pointers change. Does not matter if set by all tasklets
         sample = DPU_MRAM_HEAP_POINTER;
 
-        AFTER_SAMPLE_HEAP_POINTER = sample + edges_in_sample*sizeof(edge_t);
+        AFTER_SAMPLE_HEAP_POINTER = sample + edges_in_sample;
 
         if(me() == 0){  //One tasklets finds the locations of the nodes
             unique_nodes = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
