@@ -1,8 +1,9 @@
 DPU_DIR := dpu
 HOST_DIR := host
 BUILDDIR ?= bin
-NR_TASKLETS ?= 1  #Must be a power of two, otherwise it is necessary to change the number of splits in quicksort.h
-NR_DPUS ?= 1
+#The number of tasklets must be a power of two, otherwise it is necessary to change the number of splits in quicksort.h
+NR_TASKLETS ?= 16
+NR_DPUS ?= 10
 
 define conf_filename
 	${BUILDDIR}/.NR_DPUS_$(1)_NR_TASKLETS_$(2).conf
