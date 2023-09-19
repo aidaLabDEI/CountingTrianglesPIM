@@ -64,6 +64,7 @@ BARRIER_INIT(sync_replace_in_sample, NR_TASKLETS);
 
 MUTEX_INIT(insert_into_sample);  //Virtual insertion. Increase counter, but insertion is done according to buffer size
 MUTEX_INIT(add_triangles);  //Each tasklets can add its triangle count to the global count
+MUTEX_INIT(add_unique_nodes);
 
 //It is not possible to use edges_in_sample to know where to save. This variable keeps track of the first
 //free index in the sample where it is possible to save data from the WRAM buffers
@@ -82,7 +83,7 @@ int main() {
             sample = (__mram_ptr edge_t*) (64*1024*1024 - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
 
             assert(WRAM_BUFFER_SIZE % 16 == 0);  //8 bytes aligned, but structs of 16 bytes use this buffer
-            assert(WRAM_BUFFER_SIZE >= 64);  //Useless smaller than this (only one node_loc_t would be transferred each time)
+            assert(WRAM_BUFFER_SIZE >= 128);  //Useless smaller than this (only one node_loc_t would be transferred each time)
         }
 
         barrier_wait(&sync_tasklets);  //Wait for the setup to happen
@@ -261,27 +262,17 @@ int main() {
 
         //After the quicksort, some pointers change. Does not matter if set by all tasklets
         sample = DPU_MRAM_HEAP_POINTER;
-
         AFTER_SAMPLE_HEAP_POINTER = sample + edges_in_sample;
 
-        if(me() == 0){  //One tasklets finds the locations of the nodes
-            unique_nodes = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
-        }
+        uint32_t local_unique_nodes = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
+
+        mutex_lock(add_unique_nodes);
+        unique_nodes += local_unique_nodes;
+        mutex_unlock(add_unique_nodes);
 
         barrier_wait(&sync_tasklets);  //Wait for the location finding
 
-        //Divide triangle counting between tasklets
-        uint32_t edges_per_tasklet = (uint32_t)edges_in_sample/NR_TASKLETS;
-        uint32_t from_edge_sample = edges_per_tasklet * me();  //The first edge in the sample handled by a tasklet
-        uint32_t to_edge_sample;  //Not included
-
-        if(me() != NR_TASKLETS-1){
-             to_edge_sample = edges_per_tasklet * (me()+1);
-        }else{
-            to_edge_sample = edges_in_sample;  //If last tasklet, handle all remaining edges in sample
-        }
-
-        int32_t local_triangle_estimation = count_triangles(sample, from_edge_sample, to_edge_sample, handled_triplet, unique_nodes, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr, &DPU_INPUT_ARGUMENTS);
+        int32_t local_triangle_estimation = count_triangles(sample, edges_in_sample, handled_triplet, unique_nodes, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr, &DPU_INPUT_ARGUMENTS);
 
         //Add the triangles counted by each tasklet
         mutex_lock(add_triangles);
