@@ -1,15 +1,13 @@
-#include <assert.h>  //Assert
 #include <stdlib.h>  //Various things
 #include <stdio.h>  //Mainly debug messages
 #include <mram.h>  //Transfer data between WRAM and MRAM. Access MRAM
+#include <mutex.h>  //Mutex for tasklets
 
 #include "triangle_counter.h"
 #include "dpu_util.h"
 #include "locate_nodes.h"
 
 bool is_triplet_handled(uint32_t n1, uint32_t n2, uint32_t n3, triplet_t handled_triplet, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
-    assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
-
     int32_t c1 = get_node_color(n1, DPU_INPUT_ARGUMENTS_PTR);
     int32_t c2 = get_node_color(n2, DPU_INPUT_ARGUMENTS_PTR);
     int32_t c3 = get_node_color(n3, DPU_INPUT_ARGUMENTS_PTR);
@@ -25,57 +23,84 @@ bool is_triplet_handled(uint32_t n1, uint32_t n2, uint32_t n3, triplet_t handled
     return false;
 }
 
-uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t from, uint32_t to, triplet_t handled_triplet, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
-    assert(from <= to);  //Equal if the tasklet does not have edges assigned to it
-    assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
+uint32_t global_sample_read_offset = 0;
+MUTEX_INIT(offset_sample);
 
+uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, triplet_t handled_triplet, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     uint32_t count = 0;
 
-    //Create a buffer in the WRAM of the sample with edges starting with u and v to speed up research
-    uint32_t edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;  //Divide by 2 with right shift
-    edge_t* u_sample_buffer_wram = (edge_t*) wram_buffer_ptr;
-    edge_t* v_sample_buffer_wram = (edge_t*) wram_buffer_ptr + edges_in_wram_cache;
+    //Create a buffer in the WRAM to read more than one edge from the sample (1/8 of the total space)
+    uint32_t max_nr_edges_read = (WRAM_BUFFER_SIZE >> 3) / sizeof(edge_t) ;
+    edge_t* edges_read_buffer = (edge_t*) wram_buffer_ptr;
+    uint32_t edges_to_read = 0;
 
-    for(uint32_t i = from; i < to; i++){
-        edge_t current_edge = sample[i];
+    //Create a buffer in the WRAM of the sample with edges starting with u (7/16) and v (7/16) to speed up research
+    uint32_t max_edges_in_wram_cache = ((WRAM_BUFFER_SIZE - (WRAM_BUFFER_SIZE >> 3)) >> 1) / sizeof(edge_t);  //Divide by 2 with right shift
+    edge_t* u_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read;
+    edge_t* v_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read + max_edges_in_wram_cache;
+
+    uint32_t local_sample_read_offset;
+    uint32_t edges_read_buffer_offset = max_nr_edges_read;
+
+    while(edges_read_buffer_offset < edges_to_read || global_sample_read_offset < edges_in_sample){
+
+        if(edges_read_buffer_offset == max_nr_edges_read){
+            //The tasklets consider a few edges at a instant
+            if(edges_in_sample - global_sample_read_offset >= max_nr_edges_read){
+                edges_to_read = max_nr_edges_read;
+            }else{
+                edges_to_read = edges_in_sample - global_sample_read_offset;
+            }
+
+            mutex_lock(offset_sample);
+
+            //It may be possible that all the edges become read while waiting for the mutex
+            if(global_sample_read_offset >= edges_in_sample){
+                mutex_unlock(offset_sample);
+                break;
+            }
+
+            local_sample_read_offset = global_sample_read_offset;
+            global_sample_read_offset += edges_to_read;
+            mutex_unlock(offset_sample);
+
+            read_from_mram(&sample[local_sample_read_offset], edges_read_buffer, edges_to_read * sizeof(edge_t));
+            edges_read_buffer_offset = 0;
+        }
+
+        edge_t current_edge = edges_read_buffer[edges_read_buffer_offset];
+        edges_read_buffer_offset++;
+
         uint32_t u = current_edge.u;
         uint32_t v = current_edge.v;
 
         node_loc_t u_info = get_location_info(num_locations, u, AFTER_SAMPLE_HEAP_POINTER);
         node_loc_t v_info = get_location_info(num_locations, v, AFTER_SAMPLE_HEAP_POINTER);
 
-        if(v_info.number_bigger_neighbors == 0){  //There is no other edge with v as first node
+        if(v_info.index_in_sample == -1){  //There is no other edge with v as first node
             continue;
         }
-
-        uint32_t u_offset = 0;  //index offset inside the sample starting from the first occurrence of u and v
-        uint32_t v_offset = 0;
 
         uint32_t u_index = u_info.index_in_sample;  //Location in sample of the first occurrences of u and v as first nodes of an edge
         uint32_t v_index = v_info.index_in_sample;
 
+        uint32_t u_offset = 0;  //Offsets in the from the indexes in the sample
+        uint32_t v_offset = 0;
+
         uint32_t u_neighbor_id;
         uint32_t v_neighbor_id;
 
-        uint32_t u_sample_buffer_index = edges_in_wram_cache;  //Set to max value to force a read in the first iteration
-        uint32_t v_sample_buffer_index = edges_in_wram_cache;
+        uint32_t u_sample_buffer_index = 0;
+        uint32_t v_sample_buffer_index = 0;
 
-        while(u_offset < u_info.number_bigger_neighbors && v_offset < v_info.number_bigger_neighbors){
+        //It is not a problem if more edges than needed are read (although a bit wasteful)
+        read_from_mram(&sample[u_index], u_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
+        read_from_mram(&sample[v_index], v_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
 
-            //Retrieve new edges starting with u
-            if(u_sample_buffer_index == edges_in_wram_cache){
-                //Retrieve only the necessary amount of edges
-                uint32_t edges_to_retrieve = edges_in_wram_cache < u_info.number_bigger_neighbors ? edges_in_wram_cache : u_info.number_bigger_neighbors;
-                read_from_mram(&sample[u_index + u_offset], u_sample_buffer_wram, edges_to_retrieve * sizeof(edge_t));
-                u_sample_buffer_index = 0;
-            }
+        while(u_sample_buffer_wram[u_sample_buffer_index].u == u && v_sample_buffer_wram[v_sample_buffer_index].u == v){
 
-            //Retrieve new edges starting with v
-            if(v_sample_buffer_index == edges_in_wram_cache){
-                //Retrieve only the necessary amount of edges
-                uint32_t edges_to_retrieve = edges_in_wram_cache < v_info.number_bigger_neighbors ? edges_in_wram_cache : v_info.number_bigger_neighbors;
-                read_from_mram(&sample[v_index + v_offset], v_sample_buffer_wram, edges_to_retrieve * sizeof(edge_t));
-                v_sample_buffer_index = 0;
+            if(v_index + v_offset + v_sample_buffer_index > edges_in_sample){  //Do not start reading outside the sample region
+                break;
             }
 
             u_neighbor_id = u_sample_buffer_wram[u_sample_buffer_index].v;
@@ -102,6 +127,18 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t from, uint32_t to, 
                 v_offset++;
                 v_sample_buffer_index++;
             }
+
+            //Retrieve new edges starting with u
+            if(u_sample_buffer_index == max_edges_in_wram_cache){
+                read_from_mram(&sample[u_index + u_offset], u_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
+                u_sample_buffer_index = 0;
+            }
+
+            //Retrieve new edges starting with v
+            if(v_sample_buffer_index == max_edges_in_wram_cache){
+                read_from_mram(&sample[v_index + v_offset], v_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
+                v_sample_buffer_index = 0;
+            }
         }
     }
 
@@ -117,7 +154,7 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
         node_loc_t current_node;
 
         int mid = (low + high) >> 1;  //Divide by 2 with right shift
-        mram_read( AFTER_SAMPLE_HEAP_POINTER + mid * sizeof(node_loc_t), &current_node, sizeof(node_loc_t));  //Read the current node data from the MRAM
+        mram_read(AFTER_SAMPLE_HEAP_POINTER + mid * sizeof(node_loc_t), &current_node, sizeof(node_loc_t));  //Read the current node data from the MRAM
 
         if (current_node.id == node_id) {
             return current_node;
@@ -130,5 +167,5 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
         }
     }
     //Dummy node informations when the node is not present. The only thing that makes this not valid is the number of neighbors at 0
-    return (node_loc_t){0,0,0,0};
+    return (node_loc_t){0,-1};
 }
