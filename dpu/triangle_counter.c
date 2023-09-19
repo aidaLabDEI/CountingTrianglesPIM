@@ -5,37 +5,28 @@
 
 #include "triangle_counter.h"
 #include "dpu_util.h"
-#include "order_and_locate.h"
+#include "locate_nodes.h"
 
-bool is_triplet_handled(uint32_t n1, uint32_t n2, uint32_t n3, triplets_array_t* handled_triplets_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
-    assert(handled_triplets_ptr != NULL);
+bool is_triplet_handled(uint32_t n1, uint32_t n2, uint32_t n3, triplet_t handled_triplet, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
 
-    uint32_t c1 = get_node_color(n1, DPU_INPUT_ARGUMENTS_PTR);
-    uint32_t c2 = get_node_color(n2, DPU_INPUT_ARGUMENTS_PTR);
-    uint32_t c3 = get_node_color(n3, DPU_INPUT_ARGUMENTS_PTR);
+    int32_t c1 = get_node_color(n1, DPU_INPUT_ARGUMENTS_PTR);
+    int32_t c2 = get_node_color(n2, DPU_INPUT_ARGUMENTS_PTR);
+    int32_t c3 = get_node_color(n3, DPU_INPUT_ARGUMENTS_PTR);
     //Ordering the colors c1 <= c2 <= c3
-    if (c1 > c2) { uint32_t temp = c1; c1 = c2; c2 = temp; }
-    if (c1 > c3) { uint32_t temp = c1; c1 = c3; c3 = temp; }
-    if (c2 > c3) { uint32_t temp = c2; c2 = c3; c3 = temp; }
+    if (c1 > c2) { int32_t temp = c1; c1 = c2; c2 = temp; }
+    if (c1 > c3) { int32_t temp = c1; c1 = c3; c3 = temp; }
+    if (c2 > c3) { int32_t temp = c2; c2 = c3; c3 = temp; }
 
-    //Check if the triplet is handled by this DPU. Both c1, c2, c3 and the colors inside the triplets are ordered
-    for (uint32_t i = 0; i < handled_triplets_ptr->size; i++){
-        triplet_t current_triplet = handled_triplets_ptr->array[i];
-        if(current_triplet.color1 == c1 &&
-        current_triplet.color2 == c2 &&
-        current_triplet.color3 == c3){
-            return true;
-        }
+    if(handled_triplet.color1 == c1 && handled_triplet.color2 == c2 && handled_triplet.color3 == c3){
+        return true;
     }
+
     return false;
 }
 
-uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t from, uint32_t to, triplets_array_t* handled_triplets_ptr, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
-    assert(sample != NULL);
+uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t from, uint32_t to, triplet_t handled_triplet, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     assert(from <= to);  //Equal if the tasklet does not have edges assigned to it
-    assert(AFTER_SAMPLE_HEAP_POINTER != NULL);
-    assert(wram_buffer_ptr != NULL);
     assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
 
     uint32_t count = 0;
@@ -92,7 +83,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t from, uint32_t to, 
 
             //Because the edges are ordered, it is possible to efficiently traverse the sample
             if(u_neighbor_id == v_neighbor_id){
-                if(is_triplet_handled(u, v, u_neighbor_id, handled_triplets_ptr, DPU_INPUT_ARGUMENTS_PTR)){
+                if(is_triplet_handled(u, v, u_neighbor_id, handled_triplet, DPU_INPUT_ARGUMENTS_PTR)){
                     count++;
                 }
                 u_offset++;
@@ -119,7 +110,6 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t from, uint32_t to, 
 
 //Not much benefit transferring much more data to the WRAM than the one that is necessary
 node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER){
-    assert(AFTER_SAMPLE_HEAP_POINTER != NULL);
 
     int low = 0, high = unique_nodes - 1;
 
