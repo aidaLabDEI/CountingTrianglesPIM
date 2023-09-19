@@ -13,12 +13,12 @@
 #include "../common/common.h"
 #include "dpu_util.h"
 #include "triangle_counter.h"
-#include "order_and_locate.h"
+#include "quicksort.h"
+#include "locate_nodes.h"
 
 //Variables set by the host
-__host dpu_arguments_t DPU_INPUT_ARGUMENTS;  //Frequently used values
+__host dpu_arguments_t DPU_INPUT_ARGUMENTS;
 __host uint64_t id;  //8 bytes for CPU-DPU transfer
-__mram_noinit batch_t batch;
 
 //When the last batch is processed, this variable is set to true. In the next execution
 //the DPU will start counting the triangles
@@ -30,20 +30,22 @@ __host uint64_t triangle_estimation;  //Necessary to have a variable of 8 bytes 
 //Current count of edges in the sample (limited by sample size)
 uint32_t edges_in_sample = 0;
 
-//Sample inside the MRAM heap that starts from the heap pointer. Everything in the MRAM heap will start after the sample
-__mram_ptr edge_t* sample = DPU_MRAM_HEAP_POINTER;
+//At first, the batch is at the start of the heap, and the sample at the bottom
+//The batch is overwritten and the sample is moved in the sorting/locating phase
+__mram_ptr batch_t* batch = DPU_MRAM_HEAP_POINTER;
+__mram_ptr edge_t* sample;
 __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;
 
-//Stores all the triplets handled by this DPU
-triplets_array_t handled_triplets = {false, 0, NULL};
+//The setup happens only once
+bool is_setup_done = false;
+
+//Each DPU has one triplet at maximum
+triplet_t handled_triplet;
 
 //Number of edges handled by this DPU.
 //Edges inside the DPU, removed in the past or not considered by chance.
 //The edges not handled because of the triplets are not counted
 uint32_t total_edges = 0;
-
-//Contains the partition of the sample assigned to each tasklet in the QuickSort
-tasklet_partitions_t t_partitions;
 
 //Number of uniqe nodes in the sample
 uint32_t unique_nodes = 0;
@@ -70,14 +72,15 @@ MUTEX_INIT(transfer_to_sample);  //Real transfer to the sample in the MRAM
 
 int main() {
 
-    if(!handled_triplets.is_set){
+    if(!is_setup_done){
 
         //Make only one tasklet set up the variables for the entire DPU (and so all tasklets)
         if(me() == 0){
-            initial_setup(id, &handled_triplets, &DPU_INPUT_ARGUMENTS);  //Set random number seed and determine triplets
+            handled_triplet = initial_setup(id, &DPU_INPUT_ARGUMENTS);  //Set random number seed and determine triplet
 
-            //Calculate the new heap pointer that points to the address after the sample
-            AFTER_SAMPLE_HEAP_POINTER = DPU_MRAM_HEAP_POINTER + sizeof(edge_t) * DPU_INPUT_ARGUMENTS.SAMPLE_SIZE;
+            //Calculate the initial position of the sample (at the end of the MRAM heap)
+            sample = (__mram_ptr edge_t*) (64*1024*1024 - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
+
             assert(WRAM_BUFFER_SIZE % 16 == 0);  //8 bytes aligned, but structs of 16 bytes use this buffer
             assert(WRAM_BUFFER_SIZE >= 64);  //Useless smaller than this (only one node_loc_t would be transferred each time)
         }
@@ -86,7 +89,7 @@ int main() {
         tasklets_buffer_ptrs[me()] = mem_alloc(WRAM_BUFFER_SIZE);  //Create the buffer in the WRAM for every tasklet. Generic void* pointer
     }
 
-    if(handled_triplets.size == 0){  //Do nothing if DPU does not handle any triplet
+    if(handled_triplet.color1 == -1){  //Do nothing if DPU does not handle any triplet
         return 0;
     }
 
@@ -94,13 +97,13 @@ int main() {
     void* wram_buffer_ptr = tasklets_buffer_ptrs[me()];
 
     //Range handled by a tasklet
-    uint32_t handled_edges = (uint32_t)batch.size/NR_TASKLETS;
+    uint32_t handled_edges = (uint32_t)(batch -> size)/NR_TASKLETS;
     uint32_t edge_count_batch_local = handled_edges * me();  //The first edge handled by a tasklet
     uint32_t edge_count_batch_to;  //Not included, limits the edges in the batch handled by a tasklet
     if(me() != NR_TASKLETS-1){
          edge_count_batch_to = handled_edges * (me()+1);
     }else{
-        edge_count_batch_to = batch.size;  //If last tasklet, handle all remaining edges
+        edge_count_batch_to = (batch -> size);  //If last tasklet, handle all remaining edges
     }
 
     //It is more efficient to read some data from the MRAM to the WRAM (and write from the WRAM to MRAM)
@@ -131,7 +134,7 @@ int main() {
                 edges_to_read = edge_count_batch_to - edge_count_batch_local;
             }
 
-            read_from_mram(&batch.edges_batch[edge_count_batch_local], batch_buffer_wram, edges_to_read * sizeof(edge_t));
+            read_from_mram(&(batch -> edges_batch)[edge_count_batch_local], batch_buffer_wram, edges_to_read * sizeof(edge_t));
 
             batch_buffer_index = 0;
         }
@@ -145,7 +148,7 @@ int main() {
         edge_colors_t current_edge_colors = get_edge_colors(current_edge, &DPU_INPUT_ARGUMENTS);
 
         //Skip edge if it is not handled by this DPU
-        if(!is_edge_handled(current_edge_colors, &handled_triplets)){
+        if(!is_edge_handled(current_edge_colors, handled_triplet)){
             continue;
         }
 
@@ -155,7 +158,7 @@ int main() {
         total_edges++;
 
          //Add to sample if |S| < M
-        if(edges_in_sample < DPU_INPUT_ARGUMENTS.SAMPLE_SIZE){
+        if(edges_in_sample < DPU_INPUT_ARGUMENTS.sample_size){
 
             edges_in_sample++;
             mutex_unlock(insert_into_sample);
@@ -184,7 +187,7 @@ int main() {
 
             //Biased dice roll
             float u_rand = (float)rand() / ((float)UINT_MAX+1.0);  //UINT_MAX is the maximum value that can be returned by rand()
-    		float thres = ((float)DPU_INPUT_ARGUMENTS.SAMPLE_SIZE)/total_edges;
+    		float thres = ((float)DPU_INPUT_ARGUMENTS.sample_size)/total_edges;
 
             //Randomly decide if replace or not an edge in the sample
             if (u_rand < thres){
@@ -195,7 +198,7 @@ int main() {
                     is_sample_full = true;  //No real problem if concurrent write to this variable
                 }
 
-                uint32_t random_index = rand_range(0, DPU_INPUT_ARGUMENTS.SAMPLE_SIZE-1);
+                uint32_t random_index = rand_range(0, DPU_INPUT_ARGUMENTS.sample_size-1);
 
                 mutex_lock(insert_into_sample);
                 sample[random_index] = current_edge;  //Random access. No benefit in using WRAM cache
@@ -241,11 +244,11 @@ int main() {
     }
 
     //This is the last batch. In the next execution triangles will be counted and it is necessary to skip the while loop
-    if(!is_graph_ended && batch.size < EDGES_IN_BATCH){
+    if(!is_graph_ended && (batch -> size) < EDGES_IN_BATCH){
         //Sync finishing handling batch and the graph.
         //Without this some slow tasklet may not a return statement because this if becomes unreacheable
         barrier_wait(&sync_tasklets);
-        batch.size = 0;
+        (batch -> size) = 0;
         is_graph_ended = true;
         return 0;  //Stop the kernel before starting to count the triangles after setting the graph end flag
     }
@@ -253,20 +256,13 @@ int main() {
     //If the last batch was the last and the sample is not empty, start counting
     if(is_graph_ended && edges_in_sample > 0){
 
-        if(me() == 0){  //One tasklet creates the partitions for the QuickSort for all tasklets
-            t_partitions.partitions = mem_alloc(NR_TASKLETS * sizeof(partition_t));
-            t_partitions.size = 0;
-            tasklet_partition(sample, 0, edges_in_sample-1, NR_TASKLETS, &t_partitions);
-        }
-
-        barrier_wait(&sync_tasklets);  //Wait for the partitions to be created
-
-        //If there is a partition for a given tasklet. Some tasklets may not have a partition if the sample is small
-        if(me() < t_partitions.size){
-            sort_sample(sample, t_partitions.partitions[me()].start, t_partitions.partitions[me()].end);
-        }
-
+        sort_sample(edges_in_sample, sample, wram_buffer_ptr);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
+
+        //After the quicksort, some pointers change. Does not matter if set by all tasklets
+        sample = DPU_MRAM_HEAP_POINTER;
+
+        AFTER_SAMPLE_HEAP_POINTER = sample + edges_in_sample;
 
         if(me() == 0){  //One tasklets finds the locations of the nodes
             unique_nodes = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
@@ -285,7 +281,7 @@ int main() {
             to_edge_sample = edges_in_sample;  //If last tasklet, handle all remaining edges in sample
         }
 
-        int32_t local_triangle_estimation = count_triangles(sample, from_edge_sample, to_edge_sample, &handled_triplets, unique_nodes, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr, &DPU_INPUT_ARGUMENTS);
+        int32_t local_triangle_estimation = count_triangles(sample, from_edge_sample, to_edge_sample, handled_triplet, unique_nodes, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr, &DPU_INPUT_ARGUMENTS);
 
         //Add the triangles counted by each tasklet
         mutex_lock(add_triangles);
@@ -297,7 +293,7 @@ int main() {
 
         if(me() == 0){
             //Normalization of the result considering the substituted edges may have removed triangles
-            float p = ((float)DPU_INPUT_ARGUMENTS.SAMPLE_SIZE/total_edges)*((float)(DPU_INPUT_ARGUMENTS.SAMPLE_SIZE-1)/(total_edges-1))*((float)(DPU_INPUT_ARGUMENTS.SAMPLE_SIZE-2)/(total_edges-2));
+            float p = ((float)DPU_INPUT_ARGUMENTS.sample_size/total_edges)*((float)(DPU_INPUT_ARGUMENTS.sample_size-1)/(total_edges-1))*((float)(DPU_INPUT_ARGUMENTS.sample_size-2)/(total_edges-2));
             p = p < 1.0 ? p : 1.0;
             triangle_estimation = (uint64_t) triangle_estimation/p;
         }

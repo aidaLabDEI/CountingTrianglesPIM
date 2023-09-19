@@ -1,7 +1,8 @@
 DPU_DIR := dpu
 HOST_DIR := host
 BUILDDIR ?= bin
-NR_TASKLETS ?= 20
+#The number of tasklets must be a power of two, otherwise it is necessary to change the number of splits in quicksort.h
+NR_TASKLETS ?= 16
 NR_DPUS ?= 10
 
 define conf_filename
@@ -23,7 +24,7 @@ DPU_LIB := `dpu-pkg-config --cflags --libs dpu`
 __dirs := $(shell mkdir -p ${BUILDDIR})
 
 COMMON_FLAGS := -Wall -Wextra -g -I${COMMON_INCLUDES}
-HOST_FLAGS := ${COMMON_FLAGS} -std=c11 -O3 ${DPU_LIB} -DNR_TASKLETS=${NR_TASKLETS} -DNR_DPUS=${NR_DPUS}
+HOST_FLAGS := ${COMMON_FLAGS} -std=c11 -lm -O3 ${DPU_LIB} -DNR_TASKLETS=${NR_TASKLETS} -DNR_DPUS=${NR_DPUS}
 DPU_FLAGS := ${COMMON_FLAGS} -O2 -DNR_TASKLETS=${NR_TASKLETS} -DNR_DPUS=${NR_DPUS}
 
 all: ${HOST_TARGET} ${DPU_TARGET}

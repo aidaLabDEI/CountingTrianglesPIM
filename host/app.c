@@ -7,6 +7,7 @@
 #include <stdlib.h>  //Various
 #include <stdint.h>  //Known size integers
 #include <stdbool.h>  //Booleans
+#include <math.h> //Round
 
 #include "../common/common.h"
 
@@ -36,7 +37,6 @@ int main(int argc, char* argv[]){
 
     uint32_t random_seed = atoi(argv[1]);
 
-    //Using -1 with an unsigned integer gives a warning in the compiler. Can be ignored
     if(random_seed == 0){  //Set random seed that depends on time
         srand(time(NULL));
         random_seed = rand();
@@ -44,15 +44,25 @@ int main(int argc, char* argv[]){
         srand(random_seed);  //Set given seed
     }
 
-    uint32_t sample_size_dpus = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
+    uint32_t sample_size = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
 
-    //Using -1 with an unsigned integer gives a warning in the compiler. Can be ignored
-    if(sample_size_dpus == 0){
-        sample_size_dpus = MAX_SAMPLE_SIZE;
+    if(sample_size == 0){
+        sample_size = MAX_SAMPLE_SIZE;
     }
-    assert(sample_size_dpus <= MAX_SAMPLE_SIZE);
+    assert(sample_size <= MAX_SAMPLE_SIZE);
+
+     //There is no allocated space for the batch, everything is handled in the MRAM heap
+     //There must be space for the sample and for the batch at the same time
+    assert(EDGES_IN_BATCH * sizeof(edge_t) < (64*1024*1024 - sample_size * sizeof(edge_t)));
 
     uint32_t color_number = atoi(argv[3]);  //Number of colors used to color the nodes
+
+    //Number of triplets created given the colors. binom(c+2, 3). Max one triplet per DPU
+    uint32_t triplets_created = round((1.0/6) * color_number * (color_number+1) * (color_number+2));
+    if(triplets_created > NR_DPUS){
+        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no less than %d DPUs can be used\n", color_number, triplets_created);
+        return 1;
+    }
 
     char* file_name = argv[4];
 
@@ -67,7 +77,7 @@ int main(int argc, char* argv[]){
     DPU_ASSERT(dpu_alloc(NR_DPUS, NULL, &dpu_set));
     DPU_ASSERT(dpu_load(dpu_set, DPU_BINARY, NULL));
     /*SENDING THE SAME STARTING ARGUMENTS TO ALL DPUs*/
-    dpu_arguments_t input_arguments = {random_seed, sample_size_dpus, color_number, hash_parameter_p, hash_parameter_a, hash_parameter_b};
+    dpu_arguments_t input_arguments = {random_seed, sample_size, color_number, hash_parameter_p, hash_parameter_a, hash_parameter_b};
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "DPU_INPUT_ARGUMENTS", 0, &input_arguments, sizeof(dpu_arguments_t), DPU_XFER_DEFAULT));
 
     /*SENDING IDS TO THE DPUS*/
@@ -137,17 +147,13 @@ int main(int argc, char* argv[]){
     assert(edge_count_batch < EDGES_IN_BATCH);
 
     batch->size = edge_count_batch;
-    //Insert dummy edges to send error in DPUs the program in case of problems
-    for(uint32_t i = edge_count_batch; i < EDGES_IN_BATCH; i++){
-        batch->edges_batch[i] = (edge_t){0, 0};
-    }
 
     send_batch(dpu_set, batch);
     DPU_ASSERT(dpu_sync(dpu_set));
 
     //Batch is not used anymore
     free(batch);
-    
+
     gettimeofday(&now, 0);
     float sample_creation_time = timedifference_msec(start, now);
 
@@ -200,7 +206,8 @@ void send_batch(struct dpu_set_t dpu_set, batch_t* batch){
     DPU_ASSERT(dpu_sync(dpu_set));
 
     //Send the batch to all dpus and run the dpu program on the current batch
-    DPU_ASSERT(dpu_broadcast_to(dpu_set, "batch", 0, batch, sizeof(batch_t), DPU_XFER_DEFAULT));
+    //The batch is at the start of the MRAM heap, and it will be overwritten during the sorting/locating phase
+    DPU_ASSERT(dpu_broadcast_to(dpu_set, DPU_MRAM_HEAP_POINTER_NAME, 0, batch, sizeof(batch_t), DPU_XFER_DEFAULT));
     DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
 }
 

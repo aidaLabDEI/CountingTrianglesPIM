@@ -3,7 +3,9 @@
 
 #include <stdint.h>
 
+#ifndef EDGES_IN_BATCH
 #define EDGES_IN_BATCH 131072  //8byte * 131072 = 1MB
+#endif
 
 /*There may be two worst cases.
 1: Each edge connects two new nodes
@@ -12,18 +14,20 @@ In both cases, for each edge there is a new unique node, so,
 considering 60MB free in the MRAM for the sample, considering that
 for every edge 24 bytes are occupied, there can be 60MB/24B = 2621440 edges
 */
+#ifndef MAX_SAMPLE_SIZE
 #define MAX_SAMPLE_SIZE 2621440
+#endif
 
 //Struct used to transfer starting data from the host to the dpus. Aligned to 8 bytes
 typedef struct {
     uint32_t random_seed;
 
-    uint32_t SAMPLE_SIZE;
-    uint32_t N_COLORS;
+    uint32_t sample_size;
+    uint32_t n_colors;
 
-    uint32_t HASH_PARAMETER_P;
-    uint32_t HASH_PARAMETER_A;
-    uint32_t HASH_PARAMETER_B;
+    uint32_t hash_parameter_p;
+    uint32_t hash_parameter_a;
+    uint32_t hash_parameter_b;
 } dpu_arguments_t;
 
 //Contains the two nodes that make an edge
