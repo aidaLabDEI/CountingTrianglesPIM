@@ -116,7 +116,7 @@ void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_
         nr_edges_tasklets = indices_off[split_task][NR_TASKLETS-1];
 
         if (nr_edges_tasklets > 0) {
-            sort_full(DPU_MRAM_HEAP_POINTER+byte_offset, DPU_MRAM_HEAP_POINTER+byte_offset, nr_edges_tasklets, wram_buffer_ptr);
+            sort_full(DPU_MRAM_HEAP_POINTER+byte_offset*sizeof(edge_t), DPU_MRAM_HEAP_POINTER+byte_offset*sizeof(edge_t), nr_edges_tasklets, wram_buffer_ptr);
         }
 
         mutex_lock(splits_mutex);
