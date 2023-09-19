@@ -14,7 +14,7 @@
 
 //Considering the WRAM buffer divided into two sections
 #ifndef EDGES_IN_BLOCK
-#define EDGES_IN_BLOCK WRAM_BUFFER_SIZE/(2*sizeof(edge_t))
+#define EDGES_IN_BLOCK (WRAM_BUFFER_SIZE/(sizeof(edge_t) << 1))  //Divide into two buffer for edges
 #endif
 
 BARRIER_INIT(sync_tasklets_quicksort, NR_TASKLETS);

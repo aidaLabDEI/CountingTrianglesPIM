@@ -1,7 +1,7 @@
 DPU_DIR := dpu
 HOST_DIR := host
 BUILDDIR ?= bin
-NR_TASKLETS ?= 1
+NR_TASKLETS ?= 1  #Must be a power of two, otherwise it is necessary to change the number of splits in quicksort.h
 NR_DPUS ?= 1
 
 define conf_filename
