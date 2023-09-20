@@ -180,9 +180,9 @@ int main(int argc, char* argv[]){
     float triangle_counting_time = timedifference_msec(start, now);
 
     //For debug purpose, get standard output from the DPUs
-    DPU_FOREACH(dpu_set, dpu) {
+    /*DPU_FOREACH(dpu_set, dpu) {
         DPU_ASSERT(dpu_log_read(dpu, stdout));
-    }
+    }*/
 
     if(TESTING){
         printf("%ld\n", total_triangle_estimation);
