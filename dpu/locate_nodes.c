@@ -80,18 +80,22 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
 
         //Skip all edges already considered in a previous node location
         //Skip until there are edges to consider and, if there is a previous node id, the current node id is the same
-        do{
+        for(; sample_buffer_index < edges_read; sample_buffer_index++){
             current_node_id = sample_buffer_wram[sample_buffer_index].u;
-            sample_buffer_index++;
-        }while(sample_buffer_index < edges_read && local_read_offset != 0 && current_node_id == previous_node_id);
 
-        //If the last node in the buffer is reached, see if it should be considered or not according to the same conditions as above
-        if(sample_buffer_index == edges_read && local_read_offset != 0 && current_node_id == previous_node_id){
+            //If it is the first edge or if it is a new node, it must be considered
+            if(local_read_offset == 0 || current_node_id != previous_node_id){
+                break;
+            }
+        }
+
+        //All the nodes in the buffer have been considered already
+        if(sample_buffer_index == edges_read){
                 continue;
         }
 
         //Position inside the MRAM sample
-        index_in_sample = local_read_offset + sample_buffer_index - 1;
+        index_in_sample = local_read_offset + sample_buffer_index;
         local_unique_nodes++;
 
         //Count the number of nodes that have the current_node as value u in the edge
