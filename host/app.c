@@ -116,8 +116,6 @@ int main(int argc, char* argv[]){
     float setup_time = timedifference_msec(start, now);
     gettimeofday(&start, 0);
 
-    int64_t max_node_id = -1;  //Determine max node id to improve quicksort in DPUs
-
     while (fgets(char_buffer, sizeof(char_buffer), file_ptr) != NULL) {  //Reads until EOF
 
         //Each edge is formed by two unsigned integers separated by a space
@@ -130,10 +128,6 @@ int main(int argc, char* argv[]){
             current_edge = (edge_t){node1, node2};
         }else{
             current_edge = (edge_t){node2, node1};
-        }
-
-        if(current_edge.v > max_node_id){
-            max_node_id = current_edge.v;
         }
 
         batch->edges_batch[edge_count_batch] = current_edge;
@@ -167,13 +161,8 @@ int main(int argc, char* argv[]){
     /*READING THE ESTIMATION FROM EVERY DPU*/
     gettimeofday(&start, 0);
 
-    if(max_node_id == -1){
-        printf("No edges inside the graph. Stopping!\n");
-        return 0;
-    }
-
-    //Send the max_node_id to all DPUs. This will make them start counting the triangles
-    DPU_ASSERT(dpu_broadcast_to(dpu_set, "max_node_id", 0, &max_node_id, sizeof(max_node_id), DPU_XFER_DEFAULT));
+    uint64_t start_counting = 1;
+    DPU_ASSERT(dpu_broadcast_to(dpu_set, "start_counting", 0, &start_counting, sizeof(start_counting), DPU_XFER_DEFAULT));
 
     //Launch the DPUs program one last time. The DPUs know that the file has ended and it is time to count the triangles
     DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
