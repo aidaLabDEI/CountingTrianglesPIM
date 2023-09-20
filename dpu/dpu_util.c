@@ -4,6 +4,7 @@
 #include <stdio.h>  //Standard output for debug functions
 #include <alloc.h>  //Alloc heap in WRAM
 #include <mram.h>  //Transfer data between WRAM and MRAM
+#include <mutex.h>  //Mutex for tasklets
 
 #include "dpu_util.h"
 
@@ -32,7 +33,6 @@ int32_t get_node_color(uint32_t node_id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PT
     return ((a * node_id + b) % p) % (DPU_INPUT_ARGUMENTS_PTR -> n_colors);
 }
 
-//Need to pass pointer because the handled triplets struct needs to be modified
 triplet_t initial_setup(uint64_t id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     assert(id < NR_DPUS);
     assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
@@ -120,6 +120,50 @@ void write_to_mram(void* from_wram, __mram_ptr void* to_mram, uint32_t num_bytes
             mram_write(from_wram + t, to_mram + t, still_to_transfer);
         }
     }
+}
+
+uint32_t global_sample_read_offset = 0;
+MUTEX_INIT(offset_sample);
+
+uint32_t determine_max_node_id(__mram_ptr edge_t* sample, uint32_t edges_in_sample, edge_t* wram_edges_buffer){
+
+    uint32_t max_nr_edges_read = WRAM_BUFFER_SIZE/sizeof(edge_t);
+    uint32_t local_sample_read_offset = 0;
+
+    uint32_t edges_to_read = 0;
+
+    uint32_t max_node_id = 0;
+
+    while(global_sample_read_offset < edges_in_sample){
+
+        mutex_lock(offset_sample);
+
+        //It may be possible that all the edges become read while waiting for the mutex
+        if(global_sample_read_offset >= edges_in_sample){
+            mutex_unlock(offset_sample);
+            break;
+        }
+
+        if(edges_in_sample - global_sample_read_offset >= max_nr_edges_read){
+            edges_to_read = max_nr_edges_read;
+        }else{
+            edges_to_read = edges_in_sample - global_sample_read_offset;
+        }
+
+        local_sample_read_offset = global_sample_read_offset;
+        global_sample_read_offset += edges_to_read;
+        mutex_unlock(offset_sample);
+
+        read_from_mram(&sample[local_sample_read_offset], wram_edges_buffer, edges_to_read * sizeof(edge_t));
+
+        for(uint32_t i = 0; i < edges_to_read; i++){
+            if(wram_edges_buffer[i].v > max_node_id){  //Checking only the second node is enough because the nodes in an edge are ordered
+                max_node_id = wram_edges_buffer[i].v;
+            }
+        }
+    }
+
+    return max_node_id;
 }
 
 //Debug function for printing the sample

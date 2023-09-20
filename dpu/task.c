@@ -20,9 +20,9 @@
 __host dpu_arguments_t DPU_INPUT_ARGUMENTS;
 __host uint64_t id;  //8 bytes for CPU-DPU transfer
 
-//When the value is different than -1, that means that the graph has ended,
+//When the value is 1, that means that the graph has ended,
 //the host has sent the value and the triangle counting can start
-__host int64_t max_node_id = -1;
+__host uint64_t start_counting = 0;
 
 //Variable that will be read by the host at the end
 __host uint64_t triangle_estimation;  //Necessary to have a variable of 8 bytes for transferring to host
@@ -69,6 +69,10 @@ MUTEX_INIT(add_triangles);  //Each tasklets can add its triangle count to the gl
 //free index in the sample where it is possible to save data from the WRAM buffers
 uint32_t index_to_save_sample = 0;
 MUTEX_INIT(transfer_to_sample);  //Real transfer to the sample in the MRAM
+
+//It is better to determine the max node id in the edges inside the sample to improve the quicksort performances
+uint32_t max_node_id = 0;
+MUTEX_INIT(search_max_node_id);
 
 int main() {
 
@@ -121,7 +125,7 @@ int main() {
     //It is determined starting from the global index_to_save_sample
     uint32_t local_index_to_save_sample = 0;
 
-    if(max_node_id == -1){  //SAMPLE CREATION OPERATIONS
+    if(start_counting == 0){  //SAMPLE CREATION OPERATIONS
         while(edge_count_batch_local < edge_count_batch_to){  //Until the end of the section of the batch is reached
 
             //Transfer some edges of the batch to the WRAM
@@ -246,6 +250,16 @@ int main() {
 
         //If the last batch was the last and the sample is not empty, start counting
     }else if(edges_in_sample > 0){  //TRIANGLE COUNTING OPERATIONS
+
+        uint32_t local_max_node_id = determine_max_node_id(sample, edges_in_sample, wram_buffer_ptr);
+
+        mutex_lock(search_max_node_id);
+        if(local_max_node_id > max_node_id){
+            max_node_id = local_max_node_id;
+        }
+        mutex_unlock(search_max_node_id);
+
+        barrier_wait(&sync_tasklets);  //Wait for the max node id to be found
 
         sort_sample(edges_in_sample, sample, wram_buffer_ptr, max_node_id);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
