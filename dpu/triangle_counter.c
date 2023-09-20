@@ -45,12 +45,6 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, tr
     while(edges_read_buffer_offset < edges_to_read || global_sample_read_offset < edges_in_sample){
 
         if(edges_read_buffer_offset == max_nr_edges_read){
-            //The tasklets consider a few edges at a instant
-            if(edges_in_sample - global_sample_read_offset >= max_nr_edges_read){
-                edges_to_read = max_nr_edges_read;
-            }else{
-                edges_to_read = edges_in_sample - global_sample_read_offset;
-            }
 
             mutex_lock(offset_sample);
 
@@ -58,6 +52,13 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, tr
             if(global_sample_read_offset >= edges_in_sample){
                 mutex_unlock(offset_sample);
                 break;
+            }
+            
+            //The tasklets consider a few edges at a instant
+            if(edges_in_sample - global_sample_read_offset >= max_nr_edges_read){
+                edges_to_read = max_nr_edges_read;
+            }else{
+                edges_to_read = edges_in_sample - global_sample_read_offset;
             }
 
             local_sample_read_offset = global_sample_read_offset;
