@@ -283,7 +283,6 @@ void sort_full(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t n_edges, 
     level_start[0] = 0;  //First simulated recursion spans across all assigned section of the sample
     level_end[0] = n_edges;
 
-    uint32_t rand = 1;  //Used to select some possible pivots among which to choose one to use
     __dma_aligned edge_t pivots[5];
 
     while (i >= 0) {  ///While there are still some levels to handle
@@ -308,10 +307,11 @@ void sort_full(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t n_edges, 
                 // Current level has been sorted
                 level_start[i] = local_end;
                 i--;
-            }
-            else {
+            }else{
 
                 //Take 5 values and choose the middle one as a pivot (still random choice, but not so random)
+                uint32_t rand = rand_range(0, EDGES_IN_BLOCK-1);
+
                 mram_read((__mram_ptr void*) (in+local_start+rand), pivots, 5*sizeof(edge_t));
                 wram_selection_sort(pivots, 5);
 
@@ -338,8 +338,6 @@ void sort_full(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t n_edges, 
                     level_end[i-1] = temp;
                 }
             }
-
-            rand = (5*rand + 1)%EDGES_IN_BLOCK;  //Simple LCG for random numbers
         } else {
             //If the level does not need to be ordered, order the level i-1
             i--;
