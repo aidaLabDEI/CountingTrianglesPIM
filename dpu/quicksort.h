@@ -11,7 +11,7 @@
 #endif
 
 /*This is the main quicksort function. The sample will be moved from the current location to the top of the heap*/
-void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_t* wram_buffer_ptr);
+void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_t* wram_buffer_ptr, int64_t max_node_id);
 
 /*Performs a full step of quicksort using two caches that iterate from left and right*/
 uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t num_edges, edge_t* left_wram_cache, edge_t* right_wram_cache, edge_t pivot);
