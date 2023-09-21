@@ -146,6 +146,7 @@ uint32_t determine_max_node_id(__mram_ptr edge_t* sample, uint32_t edges_in_samp
 
         //It may be possible that all the edges become read while waiting for the mutex
         if(edges_to_read == 0){
+            mutex_unlock(offset_sample_max_id);
             break;
         }
 

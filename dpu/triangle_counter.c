@@ -57,6 +57,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, tr
 
             //It may be possible that all the edges become read while waiting for the mutex
             if(edges_to_read == 0){
+                mutex_unlock(offset_sample);
                 break;
             }
 

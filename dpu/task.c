@@ -84,7 +84,9 @@ int main() {
             handled_triplet = initial_setup(id, &DPU_INPUT_ARGUMENTS);  //Set random number seed and determine triplet
 
             //Calculate the initial position of the sample (at the end of the MRAM heap)
-            sample = (__mram_ptr edge_t*) (64*1024*1024 - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
+            //Considering that the MRAM has 64MB, -1 is needed considering that the addresses start at 0
+            //and -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible
+            sample = (__mram_ptr edge_t*) (64*1024*1024 - 1 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
 
             assert(WRAM_BUFFER_SIZE % 16 == 0);  //8 bytes aligned, but structs of 16 bytes use this buffer
             assert(WRAM_BUFFER_SIZE >= 128);  //Useless smaller than this (only one node_loc_t would be transferred each time)
