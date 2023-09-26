@@ -45,7 +45,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     uint32_t local_unique_nodes = 0;  //Number of unique nodes found
 
     //Search all the unique nodes considering only the first nodes of the edges
-    //Read untill there are edges in the local buffer or there are edges in the sample
+    //Read until there are edges in the local buffer or there are edges in the sample
     while(true){
 
         if(sample_buffer_index == max_edges_in_wram_cache){
