@@ -71,13 +71,23 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
                 //Transfer some edges of the sample to the WRAM
 
                 /*READ FROM THE MRAM*/
-                local_read_offset = read_from_sample(sample, edges_in_sample, sample_buffer_wram, &previous_node_id, &edges_read);
+                local_read_offset = virtually_read_from_sample(edges_in_sample, &edges_read);
                 sample_buffer_index = 0;
 
                 if(NR_TASKLETS > 1){
                         handshake_notify();
                 }
                 is_first_read = false;
+
+                //Read, if present, the node id of the previous edge
+                //Do not create a new node location for a node id already considered
+                if(local_read_offset != 0){
+                    edge_t previous_edge;
+                    mram_read(&sample[local_read_offset-1], &previous_edge, sizeof(edge_t));
+                    previous_node_id = previous_edge.u;
+                } //If local_read_offset == 0, the previous_node_id will not be considered
+
+                read_from_mram(&sample[local_read_offset], sample_buffer_wram, edges_read * sizeof(edge_t));
 
             }else{
                 if(NR_TASKLETS > 1){
@@ -161,7 +171,7 @@ void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buf
     }
 }
 
-uint32_t read_from_sample(__mram_ptr edge_t* sample, uint32_t edges_in_sample, edge_t* sample_buffer_wram, uint32_t* previous_node_id, uint32_t* edges_read){
+uint32_t virtually_read_from_sample(uint32_t edges_in_sample, uint32_t* edges_read){
 
     //Read more edges
     uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;
@@ -174,19 +184,6 @@ uint32_t read_from_sample(__mram_ptr edge_t* sample, uint32_t edges_in_sample, e
 
     uint32_t local_read_offset = global_read_offset;
     global_read_offset += *edges_read;
-
-    //Read, if present, the node id of the previous edge (if present).
-    //Do not create a new node location for a node id already considered
-
-    if(local_read_offset != 0){
-        edge_t previous_edge;
-        mram_read(&sample[local_read_offset-1], &previous_edge, sizeof(edge_t));
-        *previous_node_id = previous_edge.u;
-    } //If local_read_offset == 0, the previous_node_id will not be considered
-
-    //If edges_in_sample is not a multiple of max_edges_in_wram_cache edges, some bytes will be read from MRAM
-    //Containing useless informations. This is not a problem because the loop will stop with certain indexes
-    read_from_mram(&sample[local_read_offset], sample_buffer_wram, *edges_read * sizeof(edge_t));
 
     return local_read_offset;
 }
