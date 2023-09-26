@@ -179,7 +179,7 @@ uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32
     return i;
 }
 
-/*Performs a substep of the MRAM buffer partitioning using WRAM caches.
+/*Performs a sub-step of the MRAM buffer partitioning using WRAM caches.
   Returns 1 if both caches are full, 2 if the left is and 3 if the right is.*/
 uint32_t mram_partition_step(edge_t* left_wram_cache, edge_t* right_wram_cache, uint64_t n_edges,
                          int64_t* i, int64_t* j, edge_t pivot) {
@@ -268,7 +268,7 @@ void reorder(__mram_ptr edge_t* input, __mram_ptr edge_t* output, edge_t* wram_b
     }
 }
 
-/*Fully sort an array in MRAM using qucksort with random pivot selection.*/
+/*Fully sort an array in MRAM using quicksort with random pivot selection.*/
 void sort_full(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t n_edges, edge_t* wram_buffer_ptr) {
 
     //Contain the boundaries of the simulated recursion levels
@@ -324,7 +324,7 @@ void sort_full(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t n_edges, 
                 //Overwritten the current level. It will sort the right section
                 level_start[i] = local_start + p;
 
-                i++;  //Increse one level
+                i++;  //Increase one level
 
                 //If this level(after i++) is bigger than the previous one, swap them (execute before the smaller one. Tail "recursion")
                 //It is guaranteed that 2^(max_levels) elements can be ordered
@@ -432,7 +432,7 @@ uint32_t wram_buffer_partitioning(edge_t* edges_array, int64_t num_edges) {
     int32_t i = 0;
     int32_t j = num_edges-1;
 
-    //Hoare parititioning
+    //Hoare partitioning
     while (i <= j) {
         while ((edges_array[i].u < pivot.u) || (edges_array[i].u == pivot.u && edges_array[i].v < pivot.v)) {
             i++;

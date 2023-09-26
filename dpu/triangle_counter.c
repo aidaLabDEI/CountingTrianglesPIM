@@ -101,7 +101,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, tr
         while(u_sample_buffer_wram[u_sample_buffer_index].u == u && v_sample_buffer_wram[v_sample_buffer_index].u == v){
 
             //Do not start reading outside the sample region
-            //v_offset is continuosly updated
+            //v_offset is continuously updated
             if(v_index + v_offset > edges_in_sample){
                 break;
             }
