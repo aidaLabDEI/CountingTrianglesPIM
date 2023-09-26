@@ -191,7 +191,16 @@ uint32_t read_from_sample(__mram_ptr edge_t* sample, uint32_t edges_in_sample, e
     }
 
     //Read more edges
+    uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;
+
+    if(edges_in_sample - global_read_offset >= max_edges_in_wram_cache){
+        *edges_read = max_edges_in_wram_cache;
+    }else{
+        *edges_read = edges_in_sample - global_read_offset;
+    }
+
     uint32_t local_read_offset = global_read_offset;
+    global_read_offset += *edges_read;
 
     //Read, if present, the node id of the previous edge (if present).
     //Do not create a new node location for a node id already considered
@@ -202,18 +211,6 @@ uint32_t read_from_sample(__mram_ptr edge_t* sample, uint32_t edges_in_sample, e
         *previous_node_id = previous_edge.u;
     } //If local_read_offset == 0, the previous_node_id will not be considered
 
-    uint32_t edges_to_read;
-    uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;
-
-    if(edges_in_sample - global_read_offset >= max_edges_in_wram_cache){
-        edges_to_read = max_edges_in_wram_cache;
-    }else{
-        edges_to_read = edges_in_sample - global_read_offset;
-    }
-
-    *edges_read = edges_to_read;
-    global_read_offset += edges_to_read;
-
     //Notify next tasklet in line
     if(NR_TASKLETS > 1){
         handshake_notify();
@@ -221,7 +218,7 @@ uint32_t read_from_sample(__mram_ptr edge_t* sample, uint32_t edges_in_sample, e
 
     //If edges_in_sample is not a multiple of max_edges_in_wram_cache edges, some bytes will be read from MRAM
     //Containing useless informations. This is not a problem because the loop will stop with certain indexes
-    read_from_mram(&sample[local_read_offset], sample_buffer_wram, edges_to_read * sizeof(edge_t));
+    read_from_mram(&sample[local_read_offset], sample_buffer_wram, *edges_read * sizeof(edge_t));
 
     return local_read_offset;
 }
