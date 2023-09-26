@@ -31,7 +31,7 @@ __host uint64_t triangle_estimation;  //Necessary to have a variable of 8 bytes 
 uint32_t edges_in_sample = 0;
 
 //At first, the batch is at the start of the heap, and the sample at the bottom
-//The batch is overwritten and the sample is moved in the sorting/locating phase
+//The batch is overwritten and the sample is moved in the sorting phase
 __mram_ptr batch_t* batch = DPU_MRAM_HEAP_POINTER;
 __mram_ptr edge_t* sample;
 __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;

@@ -67,6 +67,8 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
                 write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER, false);
             }
 
+            //Making the tasklet write outside of the handshake lock is painfully difficult
+
             if(global_read_offset < edges_in_sample){
                 //Transfer some edges of the sample to the WRAM
 
