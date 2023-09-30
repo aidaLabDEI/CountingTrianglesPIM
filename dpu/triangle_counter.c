@@ -6,6 +6,7 @@
 #include "triangle_counter.h"
 #include "dpu_util.h"
 #include "locate_nodes.h"
+#include "../common/common.h"
 
 bool is_triplet_handled(uint32_t n1, uint32_t n2, uint32_t n3, triplet_t handled_triplet, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     int32_t c1 = get_node_color(n1, DPU_INPUT_ARGUMENTS_PTR);
