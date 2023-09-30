@@ -86,9 +86,8 @@ int main() {
             handled_triplet = initial_setup(id, &DPU_INPUT_ARGUMENTS);  //Set random number seed and determine triplet
 
             //Calculate the initial position of the sample (at the end of the MRAM heap)
-            //Considering that the MRAM has 64MB, -1 is needed considering that the addresses start at 0
-            //and -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible
-            sample = (__mram_ptr edge_t*) (64*1024*1024 - 1 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
+            //Considering that the MRAM has 64MB. -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible
+            sample = (__mram_ptr edge_t*) (64*1024*1024 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
 
             is_setup_done = true;
 
@@ -139,10 +138,10 @@ int main() {
             if(batch_buffer_index == edges_in_wram_cache){
                 //It is necessary to read only the edges assigned to the tasklet. So, only the needed edges, until
                 //the maximum allowed, are read
-                if((edge_count_batch_to - edge_count_batch_to) >= edges_in_wram_cache){
+                if((edge_count_batch_to - edge_count_batch_local) >= edges_in_wram_cache){
                     edges_in_batch_buffer = edges_in_wram_cache;
                 }else{
-                    edges_in_batch_buffer = edge_count_batch_to - edge_count_batch_to;
+                    edges_in_batch_buffer = edge_count_batch_to - edge_count_batch_local;
                 }
 
                 read_from_mram(&batch[edge_count_batch_local], batch_buffer_wram, edges_in_batch_buffer * sizeof(edge_t));

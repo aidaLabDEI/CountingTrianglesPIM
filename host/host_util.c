@@ -80,7 +80,7 @@ void* handle_edges_file(void* args_thread){  //Run in multiple threads
     pthread_exit(NULL);
 }
 
-void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t dpu_set, dpu_info_t* dpu_info_array, dpu_arguments_t* dpu_input_arguments_ptr, pthread_mutex_t* send_to_dpu_mutex, uint32_t th_id){
+void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t* dpu_set, dpu_info_t* dpu_info_array, dpu_arguments_t* dpu_input_arguments_ptr, pthread_mutex_t* send_to_dpu_mutex, uint32_t th_id){
 
     //Given that the current edge has colors (a,b), with a <= b
     edge_colors_t current_edge_colors = get_edge_colors(current_edge, dpu_input_arguments_ptr);
@@ -159,7 +159,7 @@ void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t dpu_set, dpu
     }
 }
 
-void send_batches(uint32_t th_id_from, uint32_t th_id_to, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t dpu_set){
+void send_batches(uint32_t th_id_from, uint32_t th_id_to, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
 
     for(uint32_t t = th_id_from; t < th_id_to; t++){
 
@@ -171,31 +171,37 @@ void send_batches(uint32_t th_id_from, uint32_t th_id_to, dpu_info_t* dpu_info_a
             }
         }
 
+
         //Send data to the DPUs
         pthread_mutex_lock(mutex);
 
         //Wait for all the DPUs to finish their task.
         //There is no problem if the program was never launched in the DPUs
-        DPU_ASSERT(dpu_sync(dpu_set));
+        DPU_ASSERT(dpu_sync(*dpu_set));
 
         uint32_t index;
         struct dpu_set_t dpu;
-
-        DPU_FOREACH(dpu_set, dpu, index) {
+        DPU_FOREACH(*dpu_set, dpu, index) {
             DPU_ASSERT(dpu_prepare_xfer(dpu, dpu_info_array[t * NR_DPUS + index].batch));  //Associate an address to each dpu
         }
 
         //When a batch of a DPU in a given thread is full, is likely most of the other will be too. At this point, use parallel transfers
-        DPU_ASSERT(dpu_push_xfer(dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, max_batch_size * sizeof(edge_t), DPU_XFER_DEFAULT));
+        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, max_batch_size * sizeof(edge_t), DPU_XFER_DEFAULT));
 
-        DPU_FOREACH(dpu_set, dpu, index) {
-            DPU_ASSERT(dpu_copy_to(dpu, "edges_in_batch", 0, &(dpu_info_array[t * NR_DPUS + index].edge_count_batch), sizeof(dpu_info_array[t * NR_DPUS + index].edge_count_batch)));
-            dpu_info_array[t * NR_DPUS + index].edge_count_batch = 0;
+        //Parallel transfer also for the current batch sizes
+        DPU_FOREACH(*dpu_set, dpu, index) {
+            DPU_ASSERT(dpu_prepare_xfer(dpu, &(dpu_info_array[t * NR_DPUS + index].edge_count_batch)));  //Associate an address to each dpu
         }
 
-        DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
+        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[t * NR_DPUS + index].edge_count_batch), DPU_XFER_DEFAULT));
+
+        DPU_ASSERT(dpu_launch(*dpu_set, DPU_ASYNCHRONOUS));
 
         pthread_mutex_unlock(mutex);
+
+        for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+            //dpu_info_array[t * NR_DPUS + dpu_id].edge_count_batch = 0;
+        }
     }
 }
 
