@@ -7,7 +7,7 @@
 #include "../common/common.h"
 
 #ifndef NR_THREADS
-#define NR_THREADS 4
+#define NR_THREADS 32
 #endif
 
 //Given X bytes of RAM available, X should be divided by (NR_THREADS * NR_DPUS * sizeof(edge_t))

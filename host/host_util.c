@@ -54,7 +54,8 @@ void* handle_edges_file(void* args_thread){  //Run in multiple threads
     while (file_char_counter < args -> to_char) {  //Reads until EOF
 
         //Read the file char by char until EOL
-        for(uint32_t c = 0; c < sizeof(char_buffer) && file_char_counter < file_size; c++){
+        uint32_t c = 0;
+        for(; c < sizeof(char_buffer) && file_char_counter < file_size; c++){
             if(mmaped_file[file_char_counter] == '\n'){
                 file_char_counter++;
                 break;
@@ -63,6 +64,7 @@ void* handle_edges_file(void* args_thread){  //Run in multiple threads
             char_buffer[c] = mmaped_file[file_char_counter];
             file_char_counter++;
         }
+        char_buffer[c] = 0; //Without this, some remains of previous edges may be considered
 
         //Each edge is formed by two unsigned integers separated by a space
         sscanf(char_buffer, "%d %d", &node1, &node2);
@@ -170,7 +172,6 @@ void send_batches(uint32_t th_id_from, uint32_t th_id_to, dpu_info_t* dpu_info_a
                 max_batch_size = dpu_info_array[t * NR_DPUS + dpu_id].edge_count_batch;
             }
         }
-
 
         //Send data to the DPUs
         pthread_mutex_lock(mutex);
