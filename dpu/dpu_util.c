@@ -24,15 +24,6 @@ uint32_t rand_range(uint32_t from, uint32_t to){
     return (rand() % (to - from + 1) + from);
 }
 
-int32_t get_node_color(uint32_t node_id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
-    assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
-
-    uint32_t p = DPU_INPUT_ARGUMENTS_PTR -> hash_parameter_p;
-    uint32_t a = DPU_INPUT_ARGUMENTS_PTR -> hash_parameter_a;
-    uint32_t b = DPU_INPUT_ARGUMENTS_PTR -> hash_parameter_b;
-    return ((a * node_id + b) % p) % (DPU_INPUT_ARGUMENTS_PTR -> n_colors);
-}
-
 triplet_t initial_setup(uint64_t id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     assert(id < NR_DPUS);
     assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
@@ -60,34 +51,6 @@ triplet_t initial_setup(uint64_t id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
 	}
 
     return (triplet_t){-1, -1, -1};
-}
-
-//The returned colors are ordered
-edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
-    assert(edge.u != edge.v);
-    assert(DPU_INPUT_ARGUMENTS_PTR != NULL);
-
-    int32_t color_u = get_node_color(edge.u, DPU_INPUT_ARGUMENTS_PTR);
-    int32_t color_v = get_node_color(edge.v, DPU_INPUT_ARGUMENTS_PTR);
-
-    //The colors must be ordered
-    if(color_u < color_v){
-        return (edge_colors_t){color_u, color_v};
-    }
-    return (edge_colors_t){color_v, color_u};
-}
-
-bool is_edge_handled(edge_colors_t edge_colors, triplet_t handled_triplet){
-    assert(edge_colors.color_u <= edge_colors.color_v); //Colors need to be ordered
-
-    //Check every possible combination (possible because colors are ordered)
-    if((edge_colors.color_u == handled_triplet.color1 && edge_colors.color_v == handled_triplet.color2) ||
-        (edge_colors.color_u == handled_triplet.color1 && edge_colors.color_v == handled_triplet.color3) ||
-        (edge_colors.color_u == handled_triplet.color2 && edge_colors.color_v == handled_triplet.color3)){
-            return true;
-    }
-
-    return false;
 }
 
 void read_from_mram(__mram_ptr void* from_mram, void* to_wram, uint32_t num_bytes){

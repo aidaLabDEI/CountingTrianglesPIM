@@ -18,7 +18,7 @@ typedef struct{
 uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr);
 
 //Write node locations to the MRAM
-void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer_wram, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER, bool last_write);
+void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer_wram, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER);
 
 //Read new edges from the sample
 uint32_t virtually_read_from_sample(uint32_t edges_in_sample, uint32_t* edges_read);

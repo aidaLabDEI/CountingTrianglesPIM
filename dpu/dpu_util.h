@@ -12,12 +12,6 @@
 #define WRAM_BUFFER_SIZE 2048
 #endif
 
-//Contains a pair of colors, representing the colors of an edge
-typedef struct {
-    int32_t color_u;
-    int32_t color_v;
-} edge_colors_t;
-
 //Contains the colors defining a triplet. The colors are ordered
 //Signed values to make invalid triplet
 typedef struct {
@@ -33,15 +27,6 @@ uint32_t rand_range(uint32_t from, uint32_t to);  //from and to are included
 
 //Determine what triplet will be used by this DPU and set random number seed
 triplet_t initial_setup(uint64_t id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR);
-
-//Hash function to get the color of a node
-int32_t get_node_color(uint32_t node_id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR);
-
-//Get ordered colors of the edge
-edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR);
-
-//The DPU considers if the edge colors are inside a triplet assigned to the DPU
-bool is_edge_handled(edge_colors_t edge_colors, triplet_t handled_triplet);
 
 //Wrapper to read from mram to wram. Used to read more than 2048bytes if necessary
 void read_from_mram(__mram_ptr void* from_mram, void* to_wram, uint32_t num_bytes);

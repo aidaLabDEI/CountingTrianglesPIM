@@ -32,7 +32,9 @@ uint32_t edges_in_sample = 0;
 
 //At first, the batch is at the start of the heap, and the sample at the bottom
 //The batch is overwritten and the sample is moved in the sorting phase
-__mram_ptr batch_t* batch = DPU_MRAM_HEAP_POINTER;
+__mram_ptr edge_t* batch = DPU_MRAM_HEAP_POINTER;  //Max size for batch is 32MB
+__host uint64_t edges_in_batch;
+
 __mram_ptr edge_t* sample;
 __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;
 
@@ -88,64 +90,108 @@ int main() {
             //and -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible
             sample = (__mram_ptr edge_t*) (64*1024*1024 - 1 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
 
+            is_setup_done = true;
+
             assert(WRAM_BUFFER_SIZE % 16 == 0);  //8 bytes aligned, but structs of 16 bytes use this buffer
             assert(WRAM_BUFFER_SIZE >= 128);  //Useless smaller than this (only one node_loc_t would be transferred each time)
         }
 
         barrier_wait(&sync_tasklets);  //Wait for the setup to happen
         tasklets_buffer_ptrs[me()] = mem_alloc(WRAM_BUFFER_SIZE);  //Create the buffer in the WRAM for every tasklet. Generic void* pointer
+
+        return 0;
     }
 
     if(handled_triplet.color1 == -1){  //Do nothing if DPU does not handle any triplet
         return 0;
     }
 
-    //Locate the buffer in the WRAM for this tasklet each run
-    void* wram_buffer_ptr = tasklets_buffer_ptrs[me()];
-
     //Range handled by a tasklet
-    uint32_t handled_edges = (uint32_t)(batch -> size)/NR_TASKLETS;
+    uint32_t handled_edges = (uint32_t)edges_in_batch/NR_TASKLETS;
     uint32_t edge_count_batch_local = handled_edges * me();  //The first edge handled by a tasklet
     uint32_t edge_count_batch_to;  //Not included, limits the edges in the batch handled by a tasklet
     if(me() != NR_TASKLETS-1){
          edge_count_batch_to = handled_edges * (me()+1);
     }else{
-        edge_count_batch_to = (batch -> size);  //If last tasklet, handle all remaining edges
+        edge_count_batch_to = edges_in_batch;  //If last tasklet, handle all remaining edges
     }
+
+    //Locate the buffer in the WRAM for this tasklet each run
+    void* wram_buffer_ptr = tasklets_buffer_ptrs[me()];
 
     //It is more efficient to read some data from the MRAM to the WRAM (and write from the WRAM to MRAM)
     //Less single accesses to the MRAM, but bigger ones
-    uint32_t edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1 ;  //Divide the buffer in two (with right shift)
+    uint32_t edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t));
 
-    //Half buffer will contain edges from the batch, half will contain edges to send to the sample
     edge_t* batch_buffer_wram = (edge_t*) wram_buffer_ptr;
-    edge_t* sample_buffer_wram = (edge_t*) wram_buffer_ptr + edges_in_wram_cache;
 
-    uint32_t batch_buffer_index = edges_in_wram_cache;  //In this way, the batch cache is filled at the first iteration
-    uint32_t sample_buffer_index = 0;
+    uint32_t batch_buffer_index = edges_in_wram_cache;  //Allows for data to be transfered the first iteration
 
-    //This is used to indicate to the single tasklet where to save its buffer, without requiring to have the transfer inside the mutex
-    //It is determined starting from the global index_to_save_sample
+    //This is used to indicate to the single tasklet where to save its buffer in the sample, without requiring to have the transfer inside the mutex
+    //It is determined considering the global variable index_to_save_sample
     uint32_t local_index_to_save_sample = 0;
 
     if(start_counting == 0){  //SAMPLE CREATION OPERATIONS
         while(edge_count_batch_local < edge_count_batch_to){  //Until the end of the section of the batch is reached
 
             //Transfer some edges of the batch to the WRAM
+            uint32_t edges_in_batch_buffer = 0;
             if(batch_buffer_index == edges_in_wram_cache){
-                //It is necessary to read only the edges assigned to the tasklet, so only the needed edges, until
+                //It is necessary to read only the edges assigned to the tasklet. So, only the needed edges, until
                 //the maximum allowed, are read
-                uint32_t edges_to_read;
-                if((edge_count_batch_to - edge_count_batch_local) >= edges_in_wram_cache){
-                    edges_to_read = edges_in_wram_cache;
+                if((edge_count_batch_to - edge_count_batch_to) >= edges_in_wram_cache){
+                    edges_in_batch_buffer = edges_in_wram_cache;
                 }else{
-                    edges_to_read = edge_count_batch_to - edge_count_batch_local;
+                    edges_in_batch_buffer = edge_count_batch_to - edge_count_batch_to;
                 }
 
-                read_from_mram(&(batch -> edges_batch)[edge_count_batch_local], batch_buffer_wram, edges_to_read * sizeof(edge_t));
+                read_from_mram(&batch[edge_count_batch_local], batch_buffer_wram, edges_in_batch_buffer * sizeof(edge_t));
 
                 batch_buffer_index = 0;
             }
+
+            if(!is_sample_full){
+                mutex_lock(insert_into_sample);  //Only one tasklet at the time can modify the sample
+
+                //If there is enough space for some edges in the current tasklet batch buffer, copy them to the sample
+                if(DPU_INPUT_ARGUMENTS.sample_size - edges_in_sample > 0){
+
+                    uint32_t edges_to_copy;
+                    if(DPU_INPUT_ARGUMENTS.sample_size - edges_in_sample >= edges_in_batch_buffer){
+                        edges_to_copy = edges_in_batch_buffer;
+                    }else{
+                        edges_to_copy = DPU_INPUT_ARGUMENTS.sample_size - edges_in_sample;  //Greater than zero because sample is not full
+                    }
+
+                    edges_in_sample += edges_to_copy;
+                    total_edges += edges_to_copy;
+
+                    local_index_to_save_sample = index_to_save_sample;
+                    index_to_save_sample += edges_to_copy;
+
+                    mutex_unlock(insert_into_sample);
+
+                    write_to_mram(batch_buffer_wram, &sample[local_index_to_save_sample], edges_to_copy * sizeof(edge_t));
+
+                    if(edges_to_copy == edges_in_batch_buffer){  //All edges are already transfered. Get new edges
+                        batch_buffer_index = edges_in_wram_cache;
+                        edge_count_batch_local += edges_in_wram_cache;
+                        continue;
+                    }
+
+                    batch_buffer_index = edges_to_copy;  //There are still edges to consider
+                }else{
+                    mutex_unlock(insert_into_sample);
+                }
+
+                //If a tasklet reaches this point it means that the sample is now full
+                //It is necessary to wait for all tasklets to copy their edges (if any) in the sample
+                //This is necessary to be sure that all data is transfered before starting to do replacements
+                barrier_wait(&sync_replace_in_sample);
+                is_sample_full = true;
+            }
+
+            ////There are still some edges to consider, and the sample is full. So edge replacement is necessary////
 
             edge_t current_edge = batch_buffer_wram[batch_buffer_index];
             batch_buffer_index++;
@@ -153,102 +199,25 @@ int main() {
             assert(current_edge.u <= current_edge.v);  //It is necessary for the nodes to be ordered inside the edge
             edge_count_batch_local++;
 
-            edge_colors_t current_edge_colors = get_edge_colors(current_edge, &DPU_INPUT_ARGUMENTS);
-
-            //Skip edge if it is not handled by this DPU
-            if(!is_edge_handled(current_edge_colors, handled_triplet)){
-                continue;
-            }
-
-            mutex_lock(insert_into_sample);  //Only one tasklet at the time can "virtually" modify the sample
-
-            //Count of edges assigned to this DPU
             total_edges++;
 
-             //Add to sample if |S| < M
-            if(edges_in_sample < DPU_INPUT_ARGUMENTS.sample_size){
+            //Biased dice roll
+            float u_rand = (float)rand() / ((float)UINT_MAX+1.0);  //UINT_MAX is the maximum value that can be returned by rand()
+    		float thres = ((float)DPU_INPUT_ARGUMENTS.sample_size)/total_edges;
 
-                edges_in_sample++;
+            //Randomly decide if replace or not an edge in the sample
+            if (u_rand < thres){
+
+                uint32_t random_index = rand_range(0, DPU_INPUT_ARGUMENTS.sample_size-1);
+
+                mutex_lock(insert_into_sample);
+                sample[random_index] = current_edge;  //Random access. No benefit in using WRAM cache
                 mutex_unlock(insert_into_sample);
-
-                //write the edge in the buffer in the WRAM
-                sample_buffer_wram[sample_buffer_index] = current_edge;
-                sample_buffer_index++;
-
-            }else{  //Sample is full
-                mutex_unlock(insert_into_sample);  //Unlock the mutex, while potentially transferring the buffer to the MRAM
-
-                //Transfer the last edges to the mram if the sample is full (the sample buffer becomes useless from now on)
-                if(sample_buffer_index != 0){
-
-                    //Determine the index where to save the buffer and make space for that buffer
-                    mutex_lock(transfer_to_sample);
-
-                    local_index_to_save_sample = index_to_save_sample;
-                    index_to_save_sample += sample_buffer_index;
-
-                    mutex_unlock(transfer_to_sample);
-
-                    write_to_mram(sample_buffer_wram, &sample[local_index_to_save_sample], sample_buffer_index * sizeof(edge_t));
-                    sample_buffer_index = 0;
-                }
-
-                //Biased dice roll
-                float u_rand = (float)rand() / ((float)UINT_MAX+1.0);  //UINT_MAX is the maximum value that can be returned by rand()
-        		float thres = ((float)DPU_INPUT_ARGUMENTS.sample_size)/total_edges;
-
-                //Randomly decide if replace or not an edge in the sample
-                if (u_rand < thres){
-
-                    //Wait for all the tasklets to transfer their WRAM buffer in the MRAM before replacing edges
-                    if(!is_sample_full){
-                        barrier_wait(&sync_replace_in_sample);
-                        is_sample_full = true;  //No real problem if concurrent write to this variable
-                    }
-
-                    uint32_t random_index = rand_range(0, DPU_INPUT_ARGUMENTS.sample_size-1);
-
-                    mutex_lock(insert_into_sample);
-                    sample[random_index] = current_edge;  //Random access. No benefit in using WRAM cache
-                    mutex_unlock(insert_into_sample);
-                }
-            }
-
-            //Transfer the current sample buffer to the MRAM if full
-            if(sample_buffer_index == edges_in_wram_cache){
-                //Determine the index where to save the buffer and make space for that buffer
-                mutex_lock(transfer_to_sample);
-
-                local_index_to_save_sample = index_to_save_sample;
-                index_to_save_sample += edges_in_wram_cache;
-
-                mutex_unlock(transfer_to_sample);
-
-                write_to_mram(sample_buffer_wram, &sample[local_index_to_save_sample], edges_in_wram_cache * sizeof(edge_t));
-                sample_buffer_index = 0;
-
             }
         }
 
-        //Transfer the last edges to the sample
-        if(sample_buffer_index != 0){
-            //Determine the index where to save the buffer and make space for that buffer
-            mutex_lock(transfer_to_sample);
-
-            local_index_to_save_sample = index_to_save_sample;
-            index_to_save_sample += sample_buffer_index;
-
-            mutex_unlock(transfer_to_sample);
-
-            write_to_mram(sample_buffer_wram, &sample[local_index_to_save_sample], sample_buffer_index * sizeof(edge_t));
-            sample_buffer_index = 0;
-
-        }
-
-        //Wait for all the tasklets to transfer their WRAM buffer in the MRAM before allowing edge replacement for other tasklets
-        if(!is_sample_full){
+        if(!is_sample_full){  //Unlock possible tasklets waiting for all the tasklets to copy to the sample
             barrier_wait(&sync_replace_in_sample);
-            is_sample_full = true;  //No real problem if concurrent write to this variable
         }
 
         //If the last batch was the last and the sample is not empty, start counting

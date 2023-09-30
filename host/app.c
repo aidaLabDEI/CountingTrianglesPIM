@@ -1,15 +1,25 @@
 #include <assert.h>  //Assert
 #include <dpu.h>  //Create dpu set
 #include <dpu_log.h>  //Get logs from dpus (used for debug)
-#include <stdio.h>  //Open file and print
+#include <stdio.h>  //Print
+
+//Handle file
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/mman.h>
+
 #include <time.h>  //Random seed
 #include <sys/time.h>  //Measure execution time
 #include <stdlib.h>  //Various
 #include <stdint.h>  //Known size integers
 #include <stdbool.h>  //Booleans
-#include <math.h> //Round
+#include <math.h>  //floor and ceil
+#include <pthread.h>  //Threads
 
 #include "../common/common.h"
+#include "host_util.h"
 
 #ifndef DPU_BINARY
 #define DPU_BINARY "./task"
@@ -17,11 +27,6 @@
 
 //If TESTING = 1, the output numbers have no description. Used to make easier to parse output when testing
 #define TESTING 0
-
-void send_batch(struct dpu_set_t dpu_set, batch_t* batch);
-
-//Get time difference between two moments to calculate execution time
-float timedifference_msec(struct timeval t0, struct timeval t1);
 
 int main(int argc, char* argv[]){
     struct timeval start;
@@ -44,27 +49,48 @@ int main(int argc, char* argv[]){
         srand(random_seed);  //Set given seed
     }
 
-    uint32_t sample_size = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
-
-    if(sample_size == 0){
-        sample_size = MAX_SAMPLE_SIZE;
-    }
-    assert(sample_size <= MAX_SAMPLE_SIZE);
-
-     //There is no allocated space for the batch, everything is handled in the MRAM heap
-     //There must be space for the sample and for the batch at the same time
-    assert(EDGES_IN_BATCH * sizeof(edge_t) < (64*1024*1024 - sample_size * sizeof(edge_t)));
-
     uint32_t color_number = atoi(argv[3]);  //Number of colors used to color the nodes
 
-    //Number of triplets created given the colors. binom(c+2, 3). Max one triplet per DPU
+    //Number of triplets created given the colors. binom(c+2, 3)
     uint32_t triplets_created = round((1.0/6) * color_number * (color_number+1) * (color_number+2));
     if(triplets_created > NR_DPUS){
         printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no less than %d DPUs can be used\n", color_number, triplets_created);
         return 1;
     }
 
+    uint32_t sample_size_dpus = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
+    if(sample_size_dpus > MAX_SAMPLE_SIZE){
+        printf("Sample size too big. The limit is: %d\n", MAX_SAMPLE_SIZE);
+        return 1;
+    }
+
+    if(sample_size_dpus == 0){
+        sample_size_dpus = MAX_SAMPLE_SIZE;
+    }
+
     char* file_name = argv[4];
+    struct stat file_stat;
+    if(stat(file_name, &file_stat) != 0){
+        printf("The file does not exist\n");
+        return 1;
+    }
+
+    //Map file to memory to speed up access by threads
+    int file_fd = open(file_name, O_RDONLY);
+    char* mmaped_file = (char*) mmap (0, file_stat.st_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, file_fd, 0);
+    close(file_fd);
+
+    /*DPU INFO CREATION*/
+
+    //Each thread has its own data, so no mutexes are needed while inserting
+    dpu_info_t* dpu_info_array = malloc(sizeof(dpu_info_t) * NR_THREADS * NR_DPUS);
+
+    for(int th_id = 0; th_id < NR_THREADS; th_id++){
+        for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+            dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch = 0;
+            dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(BATCH_SIZE_EDGES * sizeof(edge_t));
+        }
+    }
 
     //Determine the parameters used to color the nodes
     uint32_t hash_parameter_p = 8191;  //Prime number
@@ -76,84 +102,71 @@ int main(int argc, char* argv[]){
 
     DPU_ASSERT(dpu_alloc(NR_DPUS, NULL, &dpu_set));
     DPU_ASSERT(dpu_load(dpu_set, DPU_BINARY, NULL));
+
     /*SENDING THE SAME STARTING ARGUMENTS TO ALL DPUs*/
-    dpu_arguments_t input_arguments = {random_seed, sample_size, color_number, hash_parameter_p, hash_parameter_a, hash_parameter_b};
+    dpu_arguments_t input_arguments = {random_seed, sample_size_dpus, color_number, hash_parameter_p, hash_parameter_a, hash_parameter_b};
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "DPU_INPUT_ARGUMENTS", 0, &input_arguments, sizeof(dpu_arguments_t), DPU_XFER_DEFAULT));
 
     /*SENDING IDS TO THE DPUS*/
 
     //Necessary to create an array of ids because each dpu xfer is associated with
     //an address and to send different values, each address should be different from the others.
-    //Using 8 bytes ids for alignment
     uint64_t ids[NR_DPUS];  //8bytes for transfer to the DPUs
     for(uint64_t i = 0; i < NR_DPUS; i++){
         ids[i] = i;
     }
+
     uint32_t index;
     DPU_FOREACH(dpu_set, dpu, index) {  //dpu is a set itself
         DPU_ASSERT(dpu_prepare_xfer(dpu, &ids[index]));  //Associate an address to each dpu
     }
     DPU_ASSERT(dpu_push_xfer(dpu_set, DPU_XFER_TO_DPU, "id", 0, sizeof(ids[0]), DPU_XFER_DEFAULT));
 
-    /*READING FILE AND SENDING BATCHES*/
-
-    FILE * file_ptr = fopen(file_name, "r");
-    assert(file_ptr != NULL);
-
-     //buffer to read each line. Each node can use 10 chars each at max(unsigned integers of 4 bytes)
-    char char_buffer[32];
-    uint32_t node1, node2;
-
-    edge_t current_edge;
-    uint32_t edge_count_batch = 0;
-
-    //Contains the edges that need to be transferred to the dpus in a broadcast
-    //Dynamic memory allocation because batch may not fit inside program stack
-    batch_t* batch = (batch_t*) malloc(sizeof(batch_t));
+    //Launch DPUs for setup
+    DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
 
     struct timeval now;
     gettimeofday(&now, 0);
     float setup_time = timedifference_msec(start, now);
     gettimeofday(&start, 0);
 
-    while (fgets(char_buffer, sizeof(char_buffer), file_ptr) != NULL) {  //Reads until EOF
+    /*SAMPLE CREATION*/
 
-        //Each edge is formed by two unsigned integers separated by a space
-        sscanf(char_buffer, "%d %d", &node1, &node2);
-        if(node1 == node2){  //Ignore edges made with two equal nodes
-            continue;
-        }
-
-        if(node1 < node2){  //Nodes in edge need to be ordered
-            current_edge = (edge_t){node1, node2};
-        }else{
-            current_edge = (edge_t){node2, node1};
-        }
-
-        batch->edges_batch[edge_count_batch] = current_edge;
-
-        edge_count_batch++;
-
-        //Enough edges inserted inside this batch, time to send it
-        if(edge_count_batch == EDGES_IN_BATCH){
-            batch->size = edge_count_batch;
-            send_batch(dpu_set, batch);
-            edge_count_batch = 0;  //Reset count
-        }
+    pthread_mutex_t send_to_dpus_mutex;  //Prevent from copying data to the DPUs before the others have finished handling the previous batch
+    if (pthread_mutex_init(&send_to_dpus_mutex, NULL) != 0) {
+        printf("Mutex not initialised. Exiting\n");
+        return 1;
     }
 
-    //The file ended, sending the last batch->
-    //If the previous batch contained exactly all the remaining edges,
-    //A batch with only (0 0)s is sent.
-    assert(edge_count_batch < EDGES_IN_BATCH);
+    //Handle edges in different threads
+    pthread_t threads[NR_THREADS];
+    handle_edges_thread_args_t he_th_args[NR_THREADS];  //Arguments for the threads
 
-    batch->size = edge_count_batch;
+    uint32_t char_per_thread = file_stat.st_size/NR_THREADS;  //Number of chars that each thread will handle
 
-    send_batch(dpu_set, batch);
-    DPU_ASSERT(dpu_sync(dpu_set));
+    for(int th_id = 0; th_id < NR_THREADS; th_id++){
 
-    //Batch is not used anymore
-    free(batch);
+        //Determine the sections of chars that each thread will consider
+        uint32_t from_char_in_file = char_per_thread * th_id;
+        uint32_t to_char_in_file;  //Not included
+        if(th_id != NR_THREADS-1){
+            to_char_in_file = char_per_thread * (th_id+1);
+        }else{
+            to_char_in_file = file_stat.st_size;  //If last thread, handle all remaining chars
+        }
+
+        he_th_args[th_id] = (handle_edges_thread_args_t){th_id, mmaped_file, file_stat.st_size, from_char_in_file, to_char_in_file, &input_arguments, dpu_info_array, dpu_set, &send_to_dpus_mutex};
+
+        pthread_create(&threads[th_id], NULL, handle_edges_file, (void *)&he_th_args[th_id]);
+    }
+
+    //Wait for all threads to finish
+    for(uint32_t i = 0; i < NR_THREADS; i++){
+        pthread_join(threads[i], NULL);
+    }
+
+    //When all threads have finished, use only the main process to send all the remaining batches in parallell
+    send_batches(0, NR_THREADS-1, dpu_info_array, &send_to_dpus_mutex, dpu_set);
 
     gettimeofday(&now, 0);
     float sample_creation_time = timedifference_msec(start, now);
@@ -161,6 +174,7 @@ int main(int argc, char* argv[]){
     /*READING THE ESTIMATION FROM EVERY DPU*/
     gettimeofday(&start, 0);
 
+    //Signal the DPUs to start counting
     uint64_t start_counting = 1;
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "start_counting", 0, &start_counting, sizeof(start_counting), DPU_XFER_DEFAULT));
 
@@ -197,24 +211,16 @@ int main(int argc, char* argv[]){
         printf("Total time (ms): %f\n", setup_time+sample_creation_time+triangle_counting_time);
     }
 
-    // Close the file and free the memory taken by the BATCHES
-    fclose(file_ptr);
+    //Free everything
     DPU_ASSERT(dpu_free(dpu_set));
-}
 
-void send_batch(struct dpu_set_t dpu_set, batch_t* batch){
-    assert(batch != NULL);
+    for(int th_id = 0; th_id < NR_THREADS; th_id++){
+        for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+            free(dpu_info_array[th_id * NR_DPUS + dpu_id].batch);
+        }
+    }
 
-    //Wait for all the DPUs to finish their task.
-    //There is no problem if the program was never launched in the DPUs
-    DPU_ASSERT(dpu_sync(dpu_set));
+    free(dpu_info_array);
 
-    //Send the batch to all dpus and run the dpu program on the current batch
-    //The batch is at the start of the MRAM heap, and it will be overwritten during the sorting/locating phase
-    DPU_ASSERT(dpu_broadcast_to(dpu_set, DPU_MRAM_HEAP_POINTER_NAME, 0, batch, sizeof(batch_t), DPU_XFER_DEFAULT));
-    DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
-}
-
-float timedifference_msec(struct timeval t0, struct timeval t1){
-    return (t1.tv_sec - t0.tv_sec) * 1000.0f + (t1.tv_usec - t0.tv_usec) / 1000.0f;
+    pthread_mutex_destroy(&send_to_dpus_mutex);
 }
