@@ -155,7 +155,7 @@ int main(int argc, char* argv[]){
             to_char_in_file = file_stat.st_size;  //If last thread, handle all remaining chars
         }
 
-        he_th_args[th_id] = (handle_edges_thread_args_t){th_id, mmaped_file, file_stat.st_size, from_char_in_file, to_char_in_file, &input_arguments, dpu_info_array, dpu_set, &send_to_dpus_mutex};
+        he_th_args[th_id] = (handle_edges_thread_args_t){th_id, mmaped_file, file_stat.st_size, from_char_in_file, to_char_in_file, &input_arguments, dpu_info_array, &dpu_set, &send_to_dpus_mutex};
 
         pthread_create(&threads[th_id], NULL, handle_edges_file, (void *)&he_th_args[th_id]);
     }
@@ -166,7 +166,9 @@ int main(int argc, char* argv[]){
     }
 
     //When all threads have finished, use only the main process to send all the remaining batches in parallell
-    send_batches(0, NR_THREADS-1, dpu_info_array, &send_to_dpus_mutex, dpu_set);
+    send_batches(0, NR_THREADS, dpu_info_array, &send_to_dpus_mutex, &dpu_set);
+
+    DPU_ASSERT(dpu_sync(dpu_set));
 
     gettimeofday(&now, 0);
     float sample_creation_time = timedifference_msec(start, now);
