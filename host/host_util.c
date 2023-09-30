@@ -201,7 +201,7 @@ void send_batches(uint32_t th_id_from, uint32_t th_id_to, dpu_info_t* dpu_info_a
         pthread_mutex_unlock(mutex);
 
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            //dpu_info_array[t * NR_DPUS + dpu_id].edge_count_batch = 0;
+            dpu_info_array[t * NR_DPUS + dpu_id].edge_count_batch = 0;
         }
     }
 }
