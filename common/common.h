@@ -3,19 +3,15 @@
 
 #include <stdint.h>
 
-#ifndef EDGES_IN_BATCH
-#define EDGES_IN_BATCH 131072  //8byte * 131072 = 1MB
-#endif
-
 /*There may be two worst cases.
 1: Each edge connects two new nodes
 2: Each node is connected to the next, creating a "line"
 In both cases, for each edge there is a new unique node, so,
-considering 60MB free in the MRAM for the sample, considering that
-for every edge 24 bytes are occupied, there can be 60MB/24B = 2621440 edges
+considering 62MB free in the MRAM for the sample, considering that
+for every edge 16 bytes are occupied, there can be 62MB/16B = 4063232 edges
 */
 #ifndef MAX_SAMPLE_SIZE
-#define MAX_SAMPLE_SIZE 2621440
+#define MAX_SAMPLE_SIZE 4063232
 #endif
 
 //Struct used to transfer starting data from the host to the dpus. Aligned to 8 bytes
@@ -36,10 +32,14 @@ typedef struct {
     uint32_t v;
 } edge_t;
 
-//Contains information about the batch
+//Contains a pair of colors, representing the colors of an edge
 typedef struct {
-    uint64_t size;  //Number of valid edges in current batch
-    edge_t edges_batch[EDGES_IN_BATCH];
-} batch_t;
+    uint32_t color_u;
+    uint32_t color_v;
+} edge_colors_t;
+
+//Hash function to get the color of a node
+uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr);
+
 
 #endif /* __COMMON_H__ */

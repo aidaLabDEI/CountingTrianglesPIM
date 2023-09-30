@@ -64,7 +64,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
 
             /*WRITE TO THE MRAM*/
             if(!is_first_read){  //Nothing to write at first
-                write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER, false);
+                write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER);
             }
 
             //Making the tasklet write outside of the handshake lock is painfully difficult
@@ -151,7 +151,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     }
 
     //Write the last node locations
-    write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER, true);
+    write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER);
     remaining_tasklets--;
 
     if(NR_TASKLETS > 1 && remaining_tasklets > 0){
@@ -161,7 +161,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     return local_unique_nodes;
 }
 
-void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer_wram, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER, bool last_write){
+void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer_wram, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER){
 
     //Copy back the node locations (if any). The handshake grants the correct order
     if(*nodes_loc_buffer_index > 0){
