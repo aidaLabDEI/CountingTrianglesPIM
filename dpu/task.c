@@ -210,7 +210,7 @@ int main() {
                 uint32_t random_index = rand_range(0, DPU_INPUT_ARGUMENTS.sample_size-1);
 
                 mutex_lock(insert_into_sample);
-                sample[random_index] = current_edge;  //Random access. No benefit in using WRAM cache
+                mram_write(&current_edge, &sample[random_index], sizeof(current_edge));  //Random access. No benefit in using WRAM cache
                 mutex_unlock(insert_into_sample);
             }
         }
