@@ -183,12 +183,16 @@ int main(int argc, char* argv[]){
     //Launch the DPUs program one last time. The DPUs know that the file has ended and it is time to count the triangles
     DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
 
-    uint64_t single_dpu_triangle_estimation = 0;
-    uint64_t total_triangle_estimation = 0;
+    uint64_t single_dpu_triangle_estimation[NR_DPUS];
 
-    DPU_FOREACH(dpu_set, dpu) {
-        DPU_ASSERT(dpu_copy_from(dpu, "triangle_estimation", 0, &single_dpu_triangle_estimation, sizeof(single_dpu_triangle_estimation)));
-        total_triangle_estimation += single_dpu_triangle_estimation;
+    DPU_FOREACH(dpu_set, dpu, index) {
+        DPU_ASSERT(dpu_prepare_xfer(dpu, &single_dpu_triangle_estimation[index]));
+    }
+    DPU_ASSERT(dpu_push_xfer(dpu_set, DPU_XFER_FROM_DPU, "triangle_estimation", 0, sizeof(single_dpu_triangle_estimation[0]), DPU_XFER_DEFAULT));
+
+    uint64_t total_triangle_estimation = 0;
+    for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+        total_triangle_estimation += single_dpu_triangle_estimation[dpu_id];
     }
 
     gettimeofday(&now, 0);
