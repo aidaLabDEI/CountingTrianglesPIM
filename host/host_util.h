@@ -6,10 +6,6 @@
 
 #include "../common/common.h"
 
-#ifndef NR_THREADS
-#define NR_THREADS 32
-#endif
-
 //Given X bytes of RAM available, X should be divided by (NR_THREADS * NR_DPUS * sizeof(edge_t))
 //At the same time, it should not be more than 4194304 (32MB of edges)
 #ifndef BATCH_SIZE_EDGES
