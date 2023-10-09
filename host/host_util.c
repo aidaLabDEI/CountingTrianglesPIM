@@ -78,7 +78,7 @@ void* handle_edges_file(void* args_thread){  //Run in multiple threads
 
         insert_edge_into_batches(current_edge, args -> dpu_set, args -> dpu_info_array, args -> dpu_input_arguments_ptr, args -> send_to_dpu_mutex, args -> th_id);
     }
-
+    send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpu_mutex, args -> dpu_set);
     pthread_exit(NULL);
 }
 
@@ -109,7 +109,7 @@ void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t* dpu_set, dp
         //If the batch is full, send everything batch to all DPUs.
         //When a batch is full, it's likely that most are. Sending in parallel is more efficient
         if(current_dpu_info -> edge_count_batch == BATCH_SIZE_EDGES){
-            send_batches(th_id, th_id+1, dpu_info_array, send_to_dpu_mutex, dpu_set);
+            send_batches(th_id, dpu_info_array, send_to_dpu_mutex, dpu_set);
         }
 
         current_dpu_id++;
@@ -132,7 +132,7 @@ void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t* dpu_set, dp
             //If the batch is full, send everything batch to all DPUs.
             //When a batch is full, it's likely that most are. Sending in parallel is more efficient
             if(current_dpu_info -> edge_count_batch == BATCH_SIZE_EDGES){
-                send_batches(th_id, th_id+1, dpu_info_array, send_to_dpu_mutex, dpu_set);
+                send_batches(th_id, dpu_info_array, send_to_dpu_mutex, dpu_set);
             }
         }
 
@@ -153,7 +153,7 @@ void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t* dpu_set, dp
             //If the batch is full, send everything batch to all DPUs.
             //When a batch is full, it's likely that most are. Sending in parallel is more efficient
             if(current_dpu_info -> edge_count_batch == BATCH_SIZE_EDGES){
-                send_batches(th_id, th_id+1, dpu_info_array, send_to_dpu_mutex, dpu_set);
+                send_batches(th_id, dpu_info_array, send_to_dpu_mutex, dpu_set);
             }
 
             current_dpu_id += (1.0/2) * (colors - c1) * (colors - c1 + 1);
@@ -161,48 +161,45 @@ void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t* dpu_set, dp
     }
 }
 
-void send_batches(uint32_t th_id_from, uint32_t th_id_to, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
+void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
 
-    for(uint32_t t = th_id_from; t < th_id_to; t++){
-
-        //Do not send too much useless data
-        uint32_t max_batch_size = 0;
-        for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            if(max_batch_size < dpu_info_array[t * NR_DPUS + dpu_id].edge_count_batch){
-                max_batch_size = dpu_info_array[t * NR_DPUS + dpu_id].edge_count_batch;
-            }
+    //Do not send too much useless data
+    uint32_t max_batch_size = 0;
+    for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+        if(max_batch_size < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch){
+            max_batch_size = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
         }
+    }
 
-        //Send data to the DPUs
-        pthread_mutex_lock(mutex);
+    //Send data to the DPUs
+    pthread_mutex_lock(mutex);
 
-        //Wait for all the DPUs to finish their task.
-        //There is no problem if the program was never launched in the DPUs
-        DPU_ASSERT(dpu_sync(*dpu_set));
+    //Wait for all the DPUs to finish their task.
+    //There is no problem if the program was never launched in the DPUs
+    DPU_ASSERT(dpu_sync(*dpu_set));
 
-        uint32_t index;
-        struct dpu_set_t dpu;
-        DPU_FOREACH(*dpu_set, dpu, index) {
-            DPU_ASSERT(dpu_prepare_xfer(dpu, dpu_info_array[t * NR_DPUS + index].batch));  //Associate an address to each dpu
-        }
+    uint32_t index;
+    struct dpu_set_t dpu;
+    DPU_FOREACH(*dpu_set, dpu, index) {
+        DPU_ASSERT(dpu_prepare_xfer(dpu, dpu_info_array[th_id * NR_DPUS + index].batch));  //Associate an address to each dpu
+    }
 
-        //When a batch of a DPU in a given thread is full, is likely most of the other will be too. At this point, use parallel transfers
-        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, max_batch_size * sizeof(edge_t), DPU_XFER_DEFAULT));
+    //When a batch of a DPU in a given thread is full, is likely most of the other will be too. At this point, use parallel transfers
+    DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, max_batch_size * sizeof(edge_t), DPU_XFER_DEFAULT));
 
-        //Parallel transfer also for the current batch sizes
-        DPU_FOREACH(*dpu_set, dpu, index) {
-            DPU_ASSERT(dpu_prepare_xfer(dpu, &(dpu_info_array[t * NR_DPUS + index].edge_count_batch)));  //Associate an address to each dpu
-        }
+    //Parallel transfer also for the current batch sizes
+    DPU_FOREACH(*dpu_set, dpu, index) {
+        DPU_ASSERT(dpu_prepare_xfer(dpu, &(dpu_info_array[th_id * NR_DPUS + index].edge_count_batch)));  //Associate an address to each dpu
+    }
 
-        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[t * NR_DPUS + index].edge_count_batch), DPU_XFER_DEFAULT));
+    DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[th_id * NR_DPUS + index].edge_count_batch), DPU_XFER_DEFAULT));
 
-        DPU_ASSERT(dpu_launch(*dpu_set, DPU_ASYNCHRONOUS));
+    DPU_ASSERT(dpu_launch(*dpu_set, DPU_ASYNCHRONOUS));
 
-        pthread_mutex_unlock(mutex);
+    pthread_mutex_unlock(mutex);
 
-        for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            dpu_info_array[t * NR_DPUS + dpu_id].edge_count_batch = 0;
-        }
+    for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+        dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch = 0;
     }
 }
 
