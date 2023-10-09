@@ -8,9 +8,9 @@ NR_DPUS ?= 10
 NR_THREADS ?= 32
 
 define conf_filename
-	${BUILDDIR}/.NR_DPUS_$(1)_NR_TASKLETS_$(2).conf
+	${BUILDDIR}/.NR_DPUS_$(1)_NR_TASKLETS_$(2)_NR_THREADS_$(3).conf
 endef
-CONF := $(call conf_filename,${NR_DPUS},${NR_TASKLETS})
+CONF := $(call conf_filename,${NR_DPUS},${NR_TASKLETS},${NR_THREADS})
 
 HOST_TARGET := ${BUILDDIR}/app
 DPU_TARGET := ${BUILDDIR}/task

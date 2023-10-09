@@ -165,9 +165,7 @@ int main(int argc, char* argv[]){
         pthread_join(threads[i], NULL);
     }
 
-    //When all threads have finished, use only the main process to send all the remaining batches in parallell
-    send_batches(0, NR_THREADS, dpu_info_array, &send_to_dpus_mutex, &dpu_set);
-
+    //The threads launched the last batches, need to wait for them to be processed
     DPU_ASSERT(dpu_sync(dpu_set));
 
     gettimeofday(&now, 0);
