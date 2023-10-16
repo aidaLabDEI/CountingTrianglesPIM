@@ -87,7 +87,7 @@ int main() {
 
             //Calculate the initial position of the sample (at the end of the MRAM heap)
             //Considering that the MRAM has 64MB. -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible
-            sample = (__mram_ptr edge_t*) (64*1024*1024 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
+            sample = (__mram_ptr edge_t*) (64*1024*1024 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t) - 1);
 
             is_setup_done = true;
 
