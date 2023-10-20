@@ -7,7 +7,7 @@
 #include "../common/common.h"
 
 #ifndef NR_SPLITS
-#define NR_SPLITS 4*NR_TASKLETS  //Number (must be even) of sample splits to create. More splits means more tasklet balance
+#define NR_SPLITS 256  //Number (must be power of two multiple of tasklets) of sample splits to create. More splits means more tasklet balance
 #endif
 
 /*This is the main quicksort function. The sample will be moved from the current location to the top of the heap*/

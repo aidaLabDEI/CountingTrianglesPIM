@@ -30,13 +30,16 @@ MUTEX_INIT(offset_sample);
 uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, triplet_t handled_triplet, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     uint32_t count = 0;
 
-    //Create a buffer in the WRAM to read more than one edge from the sample (1/8 of the total space)
-    uint32_t max_nr_edges_read = (WRAM_BUFFER_SIZE >> 3) / sizeof(edge_t) ;
+    //Create a buffer in the WRAM to read more than one edge from the sample (3/4 of the total space)
+    //Bigger buffer for the edge to consider than the buffers to store traversed edges because traversed edges
+    //may be just a few and it would be a waste to load a lot of data that will not be used.
+    //Better to read more single edges to consider to enter less frequently in the mutex
+    uint32_t max_nr_edges_read = (WRAM_BUFFER_SIZE - (WRAM_BUFFER_SIZE >> 2)) / sizeof(edge_t) ;
     edge_t* edges_read_buffer = (edge_t*) wram_buffer_ptr;
     uint32_t edges_to_read = 0;
 
-    //Create a buffer in the WRAM of the sample with edges starting with u (7/16) and v (7/16) to speed up research
-    uint32_t max_edges_in_wram_cache = ((WRAM_BUFFER_SIZE - (WRAM_BUFFER_SIZE >> 3)) >> 1) / sizeof(edge_t);  //Divide by 2 with right shift
+    //Create a buffer in the WRAM of the sample with edges starting with u (1/8) and v (1/8) to speed up research
+    uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE >> 3) / sizeof(edge_t);  //Find 1/4 and divide by 2
     edge_t* u_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read;
     edge_t* v_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read + max_edges_in_wram_cache;
 
