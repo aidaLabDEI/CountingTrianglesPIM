@@ -89,7 +89,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
                     previous_node_id = previous_edge.u;
                 } //If local_read_offset == 0, the previous_node_id will not be considered
 
-                read_from_mram(&sample[local_read_offset], sample_buffer_wram, edges_read * sizeof(edge_t));
+                mram_read(&sample[local_read_offset], sample_buffer_wram, edges_read * sizeof(edge_t));
 
             }else{
                 if(NR_TASKLETS > 1){
@@ -168,7 +168,7 @@ void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buf
         uint32_t local_write_offset = global_write_offset;
         global_write_offset += *nodes_loc_buffer_index;
 
-        write_to_mram(nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER + local_write_offset, (*nodes_loc_buffer_index) * sizeof(node_loc_t));
+        mram_write(nodes_loc_buffer_wram, (__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + local_write_offset), (*nodes_loc_buffer_index) * sizeof(node_loc_t));
         *nodes_loc_buffer_index = 0;
     }
 }
@@ -196,7 +196,7 @@ void print_node_locations(uint32_t number_of_nodes, __mram_ptr void* AFTER_SAMPL
 
     for(uint32_t i = 0; i < number_of_nodes; i++){
         node_loc_t current_node;
-        mram_read(AFTER_SAMPLE_HEAP_POINTER + i * sizeof(node_loc_t), &current_node, sizeof(node_loc_t));  //Read the informations of one node from MRAM
+        mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + i * sizeof(node_loc_t)), &current_node, sizeof(node_loc_t));  //Read the informations of one node from MRAM
         printf("Id: %d Index in sample: %d\n", current_node.id, current_node.index_in_sample);
     }
 }

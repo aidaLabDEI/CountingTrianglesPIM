@@ -144,7 +144,7 @@ int main() {
                     edges_in_batch_buffer = edge_count_batch_to - edge_count_batch_local;
                 }
 
-                read_from_mram(&batch[edge_count_batch_local], batch_buffer_wram, edges_in_batch_buffer * sizeof(edge_t));
+                mram_read(&batch[edge_count_batch_local], batch_buffer_wram, edges_in_batch_buffer * sizeof(edge_t));
 
                 batch_buffer_index = 0;
             }
@@ -170,7 +170,7 @@ int main() {
 
                     mutex_unlock(insert_into_sample);
 
-                    write_to_mram(batch_buffer_wram, &sample[local_index_to_save_sample], edges_to_copy * sizeof(edge_t));
+                    mram_write(batch_buffer_wram, &sample[local_index_to_save_sample], edges_to_copy * sizeof(edge_t));
 
                     if(edges_to_copy == edges_in_batch_buffer){  //All edges are already transfered. Get new edges
                         batch_buffer_index = edges_in_wram_cache;
