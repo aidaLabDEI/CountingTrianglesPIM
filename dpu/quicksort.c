@@ -54,12 +54,12 @@ void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_
 
             uint64_t start = 0;
             if (split > i) {
-                mram_read((__mram_ptr void*) &indices_loc[split-1-i][me()], &start, sizeof(uint64_t));  //Direct MRAM access leads better results
+                mram_read(&indices_loc[split-1-i][me()], &start, sizeof(uint64_t));  //Direct MRAM access leads better results
             }
 
             uint64_t nr_edges_split;
             if (split+i < NR_SPLITS) {
-                mram_read((__mram_ptr void*) &indices_loc[split-1+i][me()], &nr_edges_split, sizeof(uint64_t)); //Direct MRAM access leads better results
+                mram_read(&indices_loc[split-1+i][me()], &nr_edges_split, sizeof(uint64_t)); //Direct MRAM access leads better results
                 nr_edges_split -= start;
             }
             else {
@@ -139,8 +139,8 @@ uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32
     int64_t i = 0;
     int64_t j = num_edges;
 
-    read_from_mram(in, left_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
-    read_from_mram(in + right_i, right_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
+    mram_read(in, left_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
+    mram_read((__mram_ptr void*) (in + right_i), right_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
 
     do {
         //Using caches all the data in this quick_sort_blocks call is partitioned.
@@ -151,15 +151,15 @@ uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32
         status = mram_partition_step(left_wram_cache, right_wram_cache, num_edges, &i, &j, pivot);
 
         if (status == 1 || status == 2) {
-            write_to_mram(left_wram_cache, out + left_i, EDGES_IN_BLOCK * sizeof(edge_t));
+            mram_write(left_wram_cache, (__mram_ptr void*) (out + left_i), EDGES_IN_BLOCK * sizeof(edge_t));
             left_i += EDGES_IN_BLOCK;
-            read_from_mram(in + left_i, left_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
+            mram_read((__mram_ptr void*) (in + left_i), left_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
         }
 
         if (status == 1 || status == 3) {
-            write_to_mram(right_wram_cache, out + right_i, EDGES_IN_BLOCK * sizeof(edge_t));
+            mram_write(right_wram_cache, (__mram_ptr void*) (out + right_i), EDGES_IN_BLOCK * sizeof(edge_t));
             right_i -= EDGES_IN_BLOCK;
-            read_from_mram(in + right_i, right_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
+            mram_read((__mram_ptr void*) (in + right_i), right_wram_cache, EDGES_IN_BLOCK * sizeof(edge_t));
         }
 
     } while (status != 0);
@@ -171,10 +171,10 @@ uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32
 
 
     if (nr_left > 0) {
-        write_to_mram(left_wram_cache, out + left_i, nr_left * sizeof(edge_t));
+        mram_write(left_wram_cache, (__mram_ptr void*) (out + left_i), nr_left * sizeof(edge_t));
     }
     if (nr_right > 0) {
-        write_to_mram(right_wram_cache + EDGES_IN_BLOCK - nr_right, out + right_i + EDGES_IN_BLOCK - nr_right, nr_right * sizeof(edge_t));
+        mram_write(right_wram_cache + EDGES_IN_BLOCK - nr_right, (__mram_ptr void*) (out + right_i + EDGES_IN_BLOCK - nr_right), nr_right * sizeof(edge_t));
     }
     return i;
 }
@@ -248,16 +248,16 @@ void reorder(__mram_ptr edge_t* input, __mram_ptr edge_t* output, edge_t* wram_b
 
         //Read and write edges from and to the MRAM using the WRAM buffer
         for (uint32_t base = 0; base + 2*EDGES_IN_BLOCK <= length; base += 2*EDGES_IN_BLOCK) {
-            read_from_mram(input + offset_in, wram_buffer_ptr, 2*EDGES_IN_BLOCK*sizeof(edge_t));
-            write_to_mram(wram_buffer_ptr, output + offset_tot, 2*EDGES_IN_BLOCK*sizeof(edge_t));
+            mram_read((__mram_ptr void*) (input + offset_in), wram_buffer_ptr, 2*EDGES_IN_BLOCK*sizeof(edge_t));
+            mram_write(wram_buffer_ptr, (__mram_ptr void*) (output + offset_tot), 2*EDGES_IN_BLOCK*sizeof(edge_t));
 
             offset_in += 2*EDGES_IN_BLOCK;
             offset_tot += 2*EDGES_IN_BLOCK;
         }
         uint64_t rem_size = length % (2*EDGES_IN_BLOCK);
         if (rem_size > 0) {
-            read_from_mram(input + offset_in, wram_buffer_ptr, rem_size*sizeof(edge_t));
-            write_to_mram(wram_buffer_ptr, output + offset_tot, rem_size*sizeof(edge_t));
+            mram_read((__mram_ptr void*) (input + offset_in), wram_buffer_ptr, rem_size*sizeof(edge_t));
+            mram_write(wram_buffer_ptr, (__mram_ptr void*) (output + offset_tot), rem_size*sizeof(edge_t));
         }
 
         offset_in += rem_size;
@@ -300,9 +300,9 @@ void sort_full(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t n_edges, 
             //If the remaining edges fit in the WRAM buffer, use it for faster quicksort and copy back the result
             if (size <= 2*EDGES_IN_BLOCK) {
 
-                read_from_mram(in+local_start, wram_buffer_ptr, size*sizeof(edge_t));
+                mram_read((__mram_ptr void*) (in+local_start), wram_buffer_ptr, size*sizeof(edge_t));
                 quicksort_wram(wram_buffer_ptr, size);
-                write_to_mram(wram_buffer_ptr, out+local_start, size*sizeof(edge_t));
+                mram_write(wram_buffer_ptr, (__mram_ptr void*) (out+local_start), size*sizeof(edge_t));
 
                 // Current level has been sorted
                 level_start[i] = local_end;

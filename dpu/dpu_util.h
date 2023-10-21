@@ -28,12 +28,6 @@ uint32_t rand_range(uint32_t from, uint32_t to);  //from and to are included
 //Determine what triplet will be used by this DPU and set random number seed
 triplet_t initial_setup(uint64_t id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR);
 
-//Wrapper to read from mram to wram. Used to read more than 2048bytes if necessary
-void read_from_mram(__mram_ptr void* from_mram, void* to_wram, uint32_t num_bytes);
-
-//Wrapper to write to mram from wram. Used to read more than 2048bytes if necessary
-void write_to_mram(void* from_wram, __mram_ptr void* to_mram, uint32_t num_bytes);
-
 //Determine the max node id inside the sample to improve quicksort performance
 uint32_t determine_max_node_id(__mram_ptr edge_t* sample, uint32_t edges_in_sample, edge_t* wram_edges_buffer);
 

@@ -53,38 +53,6 @@ triplet_t initial_setup(uint64_t id, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
     return (triplet_t){-1, -1, -1};
 }
 
-void read_from_mram(__mram_ptr void* from_mram, void* to_wram, uint32_t num_bytes){
-    assert(num_bytes <= WRAM_BUFFER_SIZE);
-
-    uint32_t max_transfer_size = 2048;  //Set by the library
-    for(uint32_t t = 0; t < num_bytes; t += max_transfer_size){  //t indicate the number of transferred bytes
-
-        uint32_t still_to_transfer = num_bytes - t;
-
-        if(still_to_transfer >= max_transfer_size){
-            mram_read(from_mram + t, to_wram + t, max_transfer_size);  //Offset in bytes because pointers are void*
-        }else{
-            mram_read(from_mram + t, to_wram + t, still_to_transfer);
-        }
-    }
-}
-
-void write_to_mram(void* from_wram, __mram_ptr void* to_mram, uint32_t num_bytes){
-    assert(num_bytes <= WRAM_BUFFER_SIZE);
-
-    uint32_t max_transfer_size = 2048; //Set by the library
-    for(uint32_t t = 0; t < num_bytes; t += max_transfer_size){  //t indicate the number of transferred bytes
-
-        uint32_t still_to_transfer = num_bytes - t;
-
-        if(still_to_transfer >= max_transfer_size){
-            mram_write(from_wram + t, to_mram + t, max_transfer_size);   //Offset in bytes because pointers are void*
-        }else{
-            mram_write(from_wram + t, to_mram + t, still_to_transfer);
-        }
-    }
-}
-
 uint32_t global_sample_offset = 0;
 MUTEX_INIT(offset_sample_max_id);
 
@@ -117,7 +85,7 @@ uint32_t determine_max_node_id(__mram_ptr edge_t* sample, uint32_t edges_in_samp
         global_sample_offset += edges_to_read;
         mutex_unlock(offset_sample_max_id);
 
-        read_from_mram(&sample[local_sample_offset], wram_edges_buffer, edges_to_read * sizeof(edge_t));
+        mram_read(&sample[local_sample_offset], wram_edges_buffer, edges_to_read * sizeof(edge_t));
 
         for(uint32_t i = 0; i < edges_to_read; i++){
             if(wram_edges_buffer[i].v > max_node_id){  //Checking only the second node is enough because the nodes in an edge are ordered
