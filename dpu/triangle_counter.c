@@ -63,15 +63,15 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
         uint32_t u = current_edge.u;
         uint32_t v = current_edge.v;
 
-        node_loc_t u_info = get_location_info(num_locations, u, AFTER_SAMPLE_HEAP_POINTER);
+        //No need to find the u_info because the starting location is given by the address of the current edge
         node_loc_t v_info = get_location_info(num_locations, v, AFTER_SAMPLE_HEAP_POINTER);
 
         if(v_info.index_in_sample == -1){  //There is no other edge with v as first node
             continue;
         }
 
-        uint32_t u_index = u_info.index_in_sample;  //Location in sample of the first occurrences of u and v as first nodes of an edge
-        uint32_t v_index = v_info.index_in_sample;
+        uint32_t u_index = local_sample_read_offset + edges_read_buffer_offset - 1; //Minus one to avoid overflows
+        uint32_t v_index = v_info.index_in_sample;  //Location in sample of the first occurrences of v as first nodes of an edge
 
         uint32_t u_offset = 0;  //Offsets in the from the indexes in the sample
         uint32_t v_offset = 0;
