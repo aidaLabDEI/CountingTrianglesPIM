@@ -10,6 +10,16 @@
 #include "host_util.h"
 #include "../common/common.h"
 
+uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr){
+    assert(dpu_input_arguments_ptr != NULL);
+
+    uint32_t p = dpu_input_arguments_ptr -> hash_parameter_p;
+    uint32_t a = dpu_input_arguments_ptr -> hash_parameter_a;
+    uint32_t b = dpu_input_arguments_ptr -> hash_parameter_b;
+
+    return ((a * node_id + b) % p) % (dpu_input_arguments_ptr -> n_colors);
+}
+
 //The returned colors are ordered
 edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* dpu_input_arguments_ptr){
     assert(edge.u != edge.v);
