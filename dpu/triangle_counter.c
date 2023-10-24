@@ -8,26 +8,10 @@
 #include "locate_nodes.h"
 #include "../common/common.h"
 
-bool is_triplet_handled(uint32_t n1, uint32_t n2, uint32_t n3, triplet_t handled_triplet, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
-    int32_t c1 = get_node_color(n1, DPU_INPUT_ARGUMENTS_PTR);
-    int32_t c2 = get_node_color(n2, DPU_INPUT_ARGUMENTS_PTR);
-    int32_t c3 = get_node_color(n3, DPU_INPUT_ARGUMENTS_PTR);
-    //Ordering the colors c1 <= c2 <= c3
-    if (c1 > c2) { int32_t temp = c1; c1 = c2; c2 = temp; }
-    if (c1 > c3) { int32_t temp = c1; c1 = c3; c3 = temp; }
-    if (c2 > c3) { int32_t temp = c2; c2 = c3; c3 = temp; }
-
-    if(handled_triplet.color1 == c1 && handled_triplet.color2 == c2 && handled_triplet.color3 == c3){
-        return true;
-    }
-
-    return false;
-}
-
 uint32_t global_sample_read_offset = 0;
 MUTEX_INIT(offset_sample);
 
-uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, triplet_t handled_triplet, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR){
+uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr){
     uint32_t count = 0;
 
     //Create a buffer in the WRAM to read more than one edge from the sample (7/8 of the total space)
@@ -115,9 +99,9 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, tr
 
             //Because the edges are ordered, it is possible to efficiently traverse the sample
             if(u_neighbor_id == v_neighbor_id){
-                if(is_triplet_handled(u, v, u_neighbor_id, handled_triplet, DPU_INPUT_ARGUMENTS_PTR)){
-                    count++;
-                }
+                //It does not matter if a triangle is counted in multiple DPUs. The results is adjusted considering this
+                count++;
+
                 u_offset++;
                 v_offset++;
 

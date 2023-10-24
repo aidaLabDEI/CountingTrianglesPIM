@@ -33,6 +33,9 @@ typedef struct{
     pthread_mutex_t* send_to_dpu_mutex;
 } handle_edges_thread_args_t;
 
+//Hash function to get the color of a node
+uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr);
+
 //Get ordered colors of the edge
 edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* dpu_input_arguments_ptr);
 

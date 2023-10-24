@@ -38,8 +38,4 @@ typedef struct {
     uint32_t color_v;
 } edge_colors_t;
 
-//Hash function to get the color of a node
-uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr);
-
-
 #endif /* __COMMON_H__ */

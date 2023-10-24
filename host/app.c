@@ -189,8 +189,28 @@ int main(int argc, char* argv[]){
     DPU_ASSERT(dpu_push_xfer(dpu_set, DPU_XFER_FROM_DPU, "triangle_estimation", 0, sizeof(single_dpu_triangle_estimation[0]), DPU_XFER_DEFAULT));
 
     uint64_t total_triangle_estimation = 0;
-    for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-        total_triangle_estimation += single_dpu_triangle_estimation[dpu_id];
+
+    //First color in the triplet section considered
+    int first_triplet_color = 0;
+    //id of the triplet (and DPU) that counts the triangle whose nodes are colored with the same color
+    uint32_t same_color_triplet_id = 0;
+
+    for(uint32_t dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+
+        int32_t addition_multiplier = 1;
+
+        if(dpu_id < triplets_created){
+
+            if(dpu_id == same_color_triplet_id){
+                addition_multiplier = 2 - color_number;
+
+                //Add binom(C + 1 - first_triplet_color, 2) to the previous id
+                same_color_triplet_id += 0.5 * (color_number - first_triplet_color) * (color_number - first_triplet_color + 1);
+                first_triplet_color++;
+            }
+        }
+
+        total_triangle_estimation += single_dpu_triangle_estimation[dpu_id] * addition_multiplier;
     }
 
     gettimeofday(&now, 0);

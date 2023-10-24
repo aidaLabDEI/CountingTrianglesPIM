@@ -247,7 +247,7 @@ int main() {
 
         barrier_wait(&sync_tasklets);  //Wait for the location finding
 
-        int32_t local_triangle_estimation = count_triangles(sample, edges_in_sample, handled_triplet, unique_nodes, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr, &DPU_INPUT_ARGUMENTS);
+        int32_t local_triangle_estimation = count_triangles(sample, edges_in_sample, unique_nodes, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
 
         //Add the triangles counted by each tasklet
         mutex_lock(add_triangles);
