@@ -43,7 +43,7 @@ edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* dpu_input_arguments_
 void* handle_edges_file(void* args_thread);
 
 //Insert the current edge into the correct batches considering how triplets are assigned to the DPUs
-void insert_edge_into_batches(edge_t current_edge, struct dpu_set_t* dpu_set, dpu_info_t* dpu_info_array, dpu_arguments_t* dpu_input_arguments_ptr, pthread_mutex_t* send_to_dpu_mutex, uint32_t th_id);
+void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, dpu_arguments_t* dpu_input_arguments_ptr, uint32_t th_id);
 
 //Send the full batch to the specific DPU. th_id_to is not included
 void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set);

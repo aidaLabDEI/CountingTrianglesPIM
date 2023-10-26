@@ -82,13 +82,35 @@ int main(int argc, char* argv[]){
 
     /*DPU INFO CREATION*/
 
+    //Get the number of edges in the graph (first line in the file)
+    char char_buffer[32];
+
+    uint32_t characters_edges_in_graph = 0;
+    for(; characters_edges_in_graph < sizeof(char_buffer) && characters_edges_in_graph < file_stat.st_size; characters_edges_in_graph++){
+        if(mmaped_file[characters_edges_in_graph] == '\n'){
+            break;
+        }
+
+        char_buffer[characters_edges_in_graph] = mmaped_file[characters_edges_in_graph];
+    }
+    char_buffer[characters_edges_in_graph] = 0;
+    characters_edges_in_graph++;  //Skip '\n' character
+
+    uint32_t edges_in_graph;
+    sscanf(char_buffer, "%d", &edges_in_graph);
+
     //Each thread has its own data, so no mutexes are needed while inserting
     dpu_info_t* dpu_info_array = malloc(sizeof(dpu_info_t) * NR_THREADS * NR_DPUS);
+
+    //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges.
+    //This number needs to be divided by the number of threads.
+    //Added 20% to avoid unlucky assignment problems
+    uint32_t max_expected_edges_per_dpu_per_thread = 1.2 * (6.0 / (color_number*color_number)) * edges_in_graph;
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
             dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch = 0;
-            dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(BATCH_SIZE_EDGES * sizeof(edge_t));
+            dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(max_expected_edges_per_dpu_per_thread * sizeof(edge_t));
         }
     }
 
@@ -142,15 +164,15 @@ int main(int argc, char* argv[]){
     pthread_t threads[NR_THREADS];
     handle_edges_thread_args_t he_th_args[NR_THREADS];  //Arguments for the threads
 
-    uint32_t char_per_thread = file_stat.st_size/NR_THREADS;  //Number of chars that each thread will handle
+    uint32_t char_per_thread = (file_stat.st_size - characters_edges_in_graph)/NR_THREADS;  //Number of chars that each thread will handle
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
 
         //Determine the sections of chars that each thread will consider
-        uint32_t from_char_in_file = char_per_thread * th_id;
+        uint32_t from_char_in_file = char_per_thread * th_id + characters_edges_in_graph;
         uint32_t to_char_in_file;  //Not included
         if(th_id != NR_THREADS-1){
-            to_char_in_file = char_per_thread * (th_id+1);
+            to_char_in_file = char_per_thread * (th_id+1) + characters_edges_in_graph;
         }else{
             to_char_in_file = file_stat.st_size;  //If last thread, handle all remaining chars
         }
