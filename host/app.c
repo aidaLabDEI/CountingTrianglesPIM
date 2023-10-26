@@ -54,13 +54,13 @@ int main(int argc, char* argv[]){
     //Number of triplets created given the colors. binom(c+2, 3)
     uint32_t triplets_created = round((1.0/6) * color_number * (color_number+1) * (color_number+2));
     if(triplets_created > NR_DPUS){
-        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no less than %d DPUs can be used\n", color_number, triplets_created);
+        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no less than %d DPUs can be used.\n", color_number, triplets_created);
         return 1;
     }
 
     uint32_t sample_size_dpus = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
     if(sample_size_dpus > MAX_SAMPLE_SIZE){
-        printf("Sample size too big. The limit is: %d\n", MAX_SAMPLE_SIZE);
+        printf("Sample size too big. The limit is: %d.\n", MAX_SAMPLE_SIZE);
         return 1;
     }
 
@@ -71,7 +71,7 @@ int main(int argc, char* argv[]){
     char* file_name = argv[4];
     struct stat file_stat;
     if(stat(file_name, &file_stat) != 0){
-        printf("The file does not exist\n");
+        printf("The file does not exist.\n");
         return 1;
     }
 
@@ -85,12 +85,11 @@ int main(int argc, char* argv[]){
     //Get the number of edges in the graph (first line in the file)
     char char_buffer[32];
 
-    uint32_t characters_edges_in_graph = 0;
+    uint32_t characters_edges_in_graph = 0;  //Count the characters used to express the edges in the graph. Skip these characters when reading edges
     for(; characters_edges_in_graph < sizeof(char_buffer) && characters_edges_in_graph < file_stat.st_size; characters_edges_in_graph++){
         if(mmaped_file[characters_edges_in_graph] == '\n'){
             break;
         }
-
         char_buffer[characters_edges_in_graph] = mmaped_file[characters_edges_in_graph];
     }
     char_buffer[characters_edges_in_graph] = 0;
@@ -104,8 +103,8 @@ int main(int argc, char* argv[]){
 
     //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges.
     //This number needs to be divided by the number of threads.
-    //Added 20% to avoid unlucky assignment problems
-    uint32_t max_expected_edges_per_dpu_per_thread = 1.2 * (6.0 / (color_number*color_number)) * edges_in_graph;
+    //Added 10% to avoid unlucky assignment problems
+    uint32_t max_expected_edges_per_dpu_per_thread = 1.1 * ((6.0 / (color_number*color_number)) * edges_in_graph) / NR_THREADS;
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
@@ -156,7 +155,7 @@ int main(int argc, char* argv[]){
 
     pthread_mutex_t send_to_dpus_mutex;  //Prevent from copying data to the DPUs before the others have finished handling the previous batch
     if (pthread_mutex_init(&send_to_dpus_mutex, NULL) != 0) {
-        printf("Mutex not initialised. Exiting\n");
+        printf("Mutex not initialised. Exiting.\n");
         return 1;
     }
 
