@@ -3,8 +3,8 @@ HOST_DIR := host
 BUILDDIR ?= bin
 #The number of tasklets must be a power of two, otherwise it is necessary to change the number of splits in quicksort.h
 NR_TASKLETS ?= 16
-NR_DPUS ?= 20
-NR_THREADS ?= 32
+NR_DPUS ?= 10
+NR_THREADS ?= 8
 
 define conf_filename
 	${BUILDDIR}/.NR_DPUS_$(1)_NR_TASKLETS_$(2)_NR_THREADS_$(3).conf

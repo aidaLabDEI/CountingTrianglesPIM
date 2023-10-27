@@ -156,8 +156,8 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, d
 void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
 
     //There not enough space to send more than 31MB of data per time
-    //The thread hold as much data as needed, but they may need to do multiple sends if the data is too much
-    uint32_t max_allowed_edges_per_batch = (31*1024*1024) / sizeof(edge_t);
+    //The threads hold as much data as needed, but they may need to do multiple transfers if the data is too much
+    uint64_t max_allowed_edges_per_batch = (31*1024*1024) / sizeof(edge_t);
 
     //Determine the max amount of edges per batch that this thread needs to send
     uint32_t max_batch_size = 0;
@@ -169,8 +169,7 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
 
     for(uint32_t batch_edge_offset = 0; batch_edge_offset < max_batch_size; batch_edge_offset += max_allowed_edges_per_batch){
 
-        //Do not send too much useless data
-        //Find a new value if it was necessary to send multiple batches
+        //Size of the biggest remaining batch
         uint32_t max_remaining_batch_size = 0;
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
             if(max_remaining_batch_size < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch){
@@ -191,14 +190,23 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
             DPU_ASSERT(dpu_prepare_xfer(dpu, &dpu_info_array[th_id * NR_DPUS + dpu_id].batch[batch_edge_offset]));  //Associate an address to each dpu
         }
 
-        uint32_t edges_to_send = max_remaining_batch_size > max_batch_size ? max_batch_size : max_remaining_batch_size - batch_edge_offset;
+        //If the amount of edges to send is too big, send the most amount of edges possible
+        //If the amount of edges is not too big, send only the remaining edges
+        bool batch_too_big = max_remaining_batch_size > max_allowed_edges_per_batch;
+        uint32_t edges_to_send = batch_too_big ? max_allowed_edges_per_batch : max_remaining_batch_size;
 
-        //When a batch of a DPU in a given thread is full, is likely most of the other will be too. At this point, use parallel transfers
         DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, edges_to_send * sizeof(edge_t), DPU_XFER_DEFAULT));
 
         //Parallel transfer also for the current batch sizes
         DPU_FOREACH(*dpu_set, dpu, dpu_id) {
-            DPU_ASSERT(dpu_prepare_xfer(dpu, &dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch));  //Associate an address to each dpu
+
+            //If less data than the full batch is sent (so the maximum allowed amount of data per transfer)
+            if(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch > max_allowed_edges_per_batch){
+                DPU_ASSERT(dpu_prepare_xfer(dpu, &max_allowed_edges_per_batch));
+
+            }else{
+                DPU_ASSERT(dpu_prepare_xfer(dpu, &dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch));
+            }
         }
 
         DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch), DPU_XFER_DEFAULT));
@@ -210,9 +218,11 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         //Update the count for the remaining edges to send
         for(dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
             uint32_t last_batch_size = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
+
             dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch =
-                last_batch_size >= max_allowed_edges_per_batch ? last_batch_size-max_allowed_edges_per_batch : 0;
+                last_batch_size >= max_allowed_edges_per_batch ? last_batch_size - max_allowed_edges_per_batch : 0;
         }
+
     }
 }
 

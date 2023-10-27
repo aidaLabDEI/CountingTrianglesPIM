@@ -103,8 +103,11 @@ int main(int argc, char* argv[]){
 
     //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges.
     //This number needs to be divided by the number of threads.
-    //Added 10% to avoid unlucky assignment problems
-    uint32_t max_expected_edges_per_dpu_per_thread = 1.1 * ((6.0 / (color_number*color_number)) * edges_in_graph) / NR_THREADS;
+    uint32_t max_expected_edges_per_dpu_per_thread = ((6.0 / (color_number*color_number)) * edges_in_graph) / NR_THREADS;
+
+    //Multiplied by 1.5 to avoid errors due to unlucky distribution (especially in small graphs with many DPUs)
+    //If the amount of edges per DPU per thread is too small, the multiplication is not enough to guarantee correctness
+    max_expected_edges_per_dpu_per_thread = max_expected_edges_per_dpu_per_thread > 2500 ? 1.5 * max_expected_edges_per_dpu_per_thread : 2500;
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
