@@ -20,11 +20,10 @@ typedef struct{
 typedef struct{
     uint32_t th_id;
 
-    char* mmaped_file;  //Information about file
-    uint32_t file_size;
+    edge_t* graph;
 
-    uint32_t from_char;  //Section of the file that the thread needs to read
-    uint32_t to_char;
+    uint32_t from_edge;  //Section of the graph that the thread needs to handle
+    uint32_t to_edge;
 
     dpu_arguments_t* dpu_input_arguments_ptr;
     dpu_info_t* dpu_info_array;
