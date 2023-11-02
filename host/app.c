@@ -260,6 +260,8 @@ int main(int argc, char* argv[]){
     float triangle_counting_time = timedifference_msec(start, now);
     printf("Time to count the triangles: %f\n", triangle_counting_time);
 
+    printf("Triangles: %ld", total_triangle_estimation);
+
     //For debug purpose, get standard output from the DPUs
     /*DPU_FOREACH(dpu_set, dpu) {
         DPU_ASSERT(dpu_log_read(dpu, stdout));
@@ -270,6 +272,7 @@ int main(int argc, char* argv[]){
         printf("%f\n", setup_time);
         printf("%f\n", sample_creation_time);
         printf("%f\n", triangle_counting_time);
+        printf("%ld\n", total_triangle_estimation);
     }
 
     //Free everything
