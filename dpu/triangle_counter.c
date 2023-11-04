@@ -27,6 +27,10 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     edge_t* u_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read;
     edge_t* v_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read + max_edges_in_wram_cache;
 
+    //If not needed as a the sample buffer, it can be used for other purposes
+    uint32_t max_node_loc_in_wram_cache = (WRAM_BUFFER_SIZE >> 3) / sizeof(node_loc_t);
+    node_loc_t* bin_search_buffer = (node_loc_t*)wram_buffer_ptr + max_nr_edges_read;
+
     uint32_t local_sample_read_offset;
     uint32_t edges_read_buffer_offset = max_nr_edges_read;
 
@@ -64,7 +68,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
         uint32_t v = current_edge.v;
 
         //No need to find the u_info because the starting location is given by the address of the current edge
-        node_loc_t v_info = get_location_info(num_locations, v, AFTER_SAMPLE_HEAP_POINTER);
+        node_loc_t v_info = get_location_info(num_locations, v, AFTER_SAMPLE_HEAP_POINTER, bin_search_buffer, max_node_loc_in_wram_cache);
 
         if(v_info.index_in_sample == -1){  //There is no other edge with v as first node
             continue;
@@ -137,23 +141,63 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
 }
 
 //Not much benefit transferring much more data to the WRAM than the one that is necessary
-node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER){
+node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, node_loc_t* node_loc_buffer_ptr, uint32_t max_node_loc_in_buffer){
 
     int low = 0, high = unique_nodes - 1;
 
+    //Transfer at least 128 bytes of data at a time
+    uint32_t min_node_loc_in_buffer = 128 / sizeof(node_loc_t);
+    //Make sure that the minimum number of elements still fits in the WRAM buffer
+    min_node_loc_in_buffer = max_node_loc_in_buffer > min_node_loc_in_buffer ? min_node_loc_in_buffer : max_node_loc_in_buffer;
+
     while (low <= high) {
-        node_loc_t current_node;
+
+        //If there are more elements than the maximum that can fit in the WRAM buffer
+        if((uint32_t)(high - low + 1) > max_node_loc_in_buffer){
+            int mid = (low + high) >> 1;  //Divide by 2 with right shift
+
+            //Transfer (a maximum of) 128 bytes
+            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + mid * sizeof(node_loc_t)), node_loc_buffer_ptr, min_node_loc_in_buffer * sizeof(node_loc_t));
+
+            if(node_loc_buffer_ptr[0].id > node_id){
+                high = mid - 1;
+
+            }else if(node_loc_buffer_ptr[min_node_loc_in_buffer-1].id < node_id){
+                low = mid + min_node_loc_in_buffer;
+
+            }else{
+                //The correct node location is inside the 128 bytes that were transferred before
+                return get_location_info_WRAM(node_id, node_loc_buffer_ptr, min_node_loc_in_buffer);
+            }
+        }else{
+            //Do not load more elements than necessary
+            uint32_t node_loc_to_load = (high - low + 1);
+
+            //Search in the remaining elements
+            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + low * sizeof(node_loc_t)), node_loc_buffer_ptr, node_loc_to_load * sizeof(node_loc_t));  //Read the current node data from the MRAM
+
+            return get_location_info_WRAM(node_id, node_loc_buffer_ptr, node_loc_to_load);
+        }
+    }
+    //Dummy node informations when the node is not present. The only thing that makes this not valid is the number of neighbors at 0
+    return (node_loc_t){0,-1};
+}
+
+node_loc_t get_location_info_WRAM(uint32_t node_id, node_loc_t* node_loc_buffer_ptr, uint32_t num_elements){
+    int low = 0, high = num_elements - 1;
+
+    while (low <= high) {
 
         int mid = (low + high) >> 1;  //Divide by 2 with right shift
-        mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + mid * sizeof(node_loc_t)), &current_node, sizeof(node_loc_t));  //Read the current node data from the MRAM
+        node_loc_t current_node = node_loc_buffer_ptr[mid];
 
-        if (current_node.id == node_id) {
+        if(current_node.id == node_id){
             return current_node;
 
-        } else if (current_node.id > node_id) {
+        }else if (current_node.id > node_id){
             high = mid - 1;
 
-        } else {
+        }else{
             low = mid + 1;
         }
     }
