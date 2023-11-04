@@ -122,9 +122,9 @@ int main(int argc, char* argv[]){
 
     //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges.
     //This number needs to be divided by the number of threads.
-    //Multiplied by 1.5 to avoid errors due to unlucky distribution (especially in small graphs with many DPUs)
+    //Multiplied by 2 to avoid errors due to unlucky distribution (especially in small graphs with many DPUs)
     //If the amount of edges per DPU per thread is too small, the multiplication is not enough to guarantee correctness
-    uint32_t max_expected_edges_per_dpu_per_thread = 1.5 * ((6.0 / (color_number*color_number)) * edges_in_graph) / NR_THREADS + 2500;
+    uint32_t max_expected_edges_per_dpu_per_thread = 2 * ((6.0 / (color_number*color_number)) * edges_in_graph) / NR_THREADS + 2500;
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
@@ -147,21 +147,6 @@ int main(int argc, char* argv[]){
     /*SENDING THE SAME STARTING ARGUMENTS TO ALL DPUs*/
     dpu_arguments_t input_arguments = {random_seed, sample_size_dpus, color_number, hash_parameter_p, hash_parameter_a, hash_parameter_b};
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "DPU_INPUT_ARGUMENTS", 0, &input_arguments, sizeof(dpu_arguments_t), DPU_XFER_DEFAULT));
-
-    /*SENDING IDS TO THE DPUS*/
-
-    //Necessary to create an array of ids because each dpu xfer is associated with
-    //an address and to send different values, each address should be different from the others.
-    uint64_t ids[NR_DPUS];  //8bytes for transfer to the DPUs
-    for(uint64_t i = 0; i < NR_DPUS; i++){
-        ids[i] = i;
-    }
-
-    uint32_t index;
-    DPU_FOREACH(dpu_set, dpu, index) {  //dpu is a set itself
-        DPU_ASSERT(dpu_prepare_xfer(dpu, &ids[index]));  //Associate an address to each dpu
-    }
-    DPU_ASSERT(dpu_push_xfer(dpu_set, DPU_XFER_TO_DPU, "id", 0, sizeof(ids[0]), DPU_XFER_DEFAULT));
 
     //Launch DPUs for setup
     DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
@@ -225,6 +210,7 @@ int main(int argc, char* argv[]){
 
     uint64_t single_dpu_triangle_estimation[NR_DPUS];
 
+    uint32_t index;
     DPU_FOREACH(dpu_set, dpu, index) {
         DPU_ASSERT(dpu_prepare_xfer(dpu, &single_dpu_triangle_estimation[index]));
     }

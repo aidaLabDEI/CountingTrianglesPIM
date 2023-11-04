@@ -7,9 +7,6 @@
 #include "dpu_util.h"
 #include "locate_nodes.h"
 
-//Check if the triplet found is handled by this DPU
-bool is_triplet_handled(uint32_t c1, uint32_t c2, uint32_t c3, triplet_t handled_triplet, dpu_arguments_t* DPU_INPUT_ARGUMENTS_PTR);
-
 //from and to are used to divide the workload between tasklets
 uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr);  //to is excluded
 
