@@ -145,29 +145,23 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
 
     int low = 0, high = unique_nodes - 1;
 
-    //Transfer at least 128 bytes of data at a time
-    uint32_t min_node_loc_in_buffer = 128 / sizeof(node_loc_t);
-    //Make sure that the minimum number of elements still fits in the WRAM buffer
-    min_node_loc_in_buffer = max_node_loc_in_buffer > min_node_loc_in_buffer ? min_node_loc_in_buffer : max_node_loc_in_buffer;
-
     while (low <= high) {
 
-        //If there are more elements than the maximum that can fit in the WRAM buffer
+        //If there are more elements than the maximum that can fit in the WRAM buffer, do normal binary search
         if((uint32_t)(high - low + 1) > max_node_loc_in_buffer){
+            node_loc_t current_node;
+
             int mid = (low + high) >> 1;  //Divide by 2 with right shift
+            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + mid * sizeof(node_loc_t)), &current_node, sizeof(node_loc_t));  //Read the current node data from the MRAM
 
-            //Transfer (a maximum of) 128 bytes
-            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + mid * sizeof(node_loc_t)), node_loc_buffer_ptr, min_node_loc_in_buffer * sizeof(node_loc_t));
+            if (current_node.id == node_id) {
+                return current_node;
 
-            if(node_loc_buffer_ptr[0].id > node_id){
+            } else if (current_node.id > node_id) {
                 high = mid - 1;
 
-            }else if(node_loc_buffer_ptr[min_node_loc_in_buffer-1].id < node_id){
-                low = mid + min_node_loc_in_buffer;
-
-            }else{
-                //The correct node location is inside the 128 bytes that were transferred before
-                return get_location_info_WRAM(node_id, node_loc_buffer_ptr, min_node_loc_in_buffer);
+            } else {
+                low = mid + 1;
             }
         }else{
             //Do not load more elements than necessary
