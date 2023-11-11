@@ -28,6 +28,8 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     edge_t* v_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read + max_edges_in_wram_cache;
 
     //If not needed as a the sample buffer, it can be used for other purposes
+    //Given a buffer of size N bytes, the cycles needed without a buffer are log2(N/8) * (77 + 0.5 * 8), with a buffer (77 + 0.5 * N)
+    //A buffer gives better results with N between 24 and 960
     uint32_t max_node_loc_in_wram_cache = (WRAM_BUFFER_SIZE >> 3) / sizeof(node_loc_t);
     node_loc_t* bin_search_buffer = (node_loc_t*)wram_buffer_ptr + max_nr_edges_read;
 
