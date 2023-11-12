@@ -2,6 +2,7 @@
 #include <stdio.h>  //Mainly debug messages
 #include <mram.h>  //Transfer data between WRAM and MRAM. Access MRAM
 #include <mutex.h>  //Mutex for tasklets
+#include <defs.h>
 
 #include "triangle_counter.h"
 #include "dpu_util.h"
@@ -76,7 +77,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
             continue;
         }
 
-        uint32_t u_index = local_sample_read_offset + edges_read_buffer_offset - 1; //Minus one to avoid overflows
+        uint32_t u_index = local_sample_read_offset + edges_read_buffer_offset - 1;
         uint32_t v_index = v_info.index_in_sample;  //Location in sample of the first occurrences of v as first nodes of an edge
 
         uint32_t u_offset = 0;  //Offsets in the from the indexes in the sample
@@ -85,12 +86,26 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
         uint32_t u_neighbor_id;
         uint32_t v_neighbor_id;
 
-        uint32_t u_sample_buffer_index = 0;
         uint32_t v_sample_buffer_index = 0;
-
-        //It is not a problem if more edges than needed are read (although a bit wasteful)
-        mram_read(&sample[u_index], u_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
         mram_read(&sample[v_index], v_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
+
+        //Use the edges that are already present in the WRAM at first
+        uint32_t u_edges_to_copy;
+        uint32_t u_sample_buffer_index;
+
+        //If in the edges buffer there are more edges than there can be in the u_buffer, copy everything that fits
+        if(max_nr_edges_read - (edges_read_buffer_offset-1) > max_edges_in_wram_cache){
+            u_edges_to_copy = max_edges_in_wram_cache;
+            u_sample_buffer_index = 0;
+        }else{
+            //Copy only the last edges in the buffer
+            u_edges_to_copy = max_nr_edges_read - (edges_read_buffer_offset-1);
+            u_sample_buffer_index = max_edges_in_wram_cache - u_edges_to_copy;
+        }
+
+        for(uint32_t i = 0; i < u_edges_to_copy; i++){
+            u_sample_buffer_wram[u_sample_buffer_index + i] = edges_read_buffer[edges_read_buffer_offset - 1 + i];
+        }
 
         while(u_sample_buffer_wram[u_sample_buffer_index].u == u && v_sample_buffer_wram[v_sample_buffer_index].u == v){
 
