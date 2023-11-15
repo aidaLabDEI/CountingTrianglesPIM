@@ -39,12 +39,53 @@ void* handle_edges_file(void* args_thread){  //Run in multiple threads
 
     handle_edges_thread_args_t* args = (handle_edges_thread_args_t*)args_thread;
 
-    uint32_t local_edge_offset = args -> from_edge;
-    edge_t* graph = args -> graph;
+    //Buffer to read each line. Each node can use 10 chars each at max (unsigned integers of 4 bytes)
+    char char_buffer[32];
+    uint32_t node1, node2;
 
-    while (local_edge_offset < args -> to_edge) {
-        edge_t current_edge = graph[local_edge_offset++];
+    edge_t current_edge;
 
+    uint32_t file_size = args -> file_size;
+    char* mmaped_file = args -> mmaped_file;
+
+    uint32_t file_char_counter = args -> from_char;
+
+    //If the division makes the thread start in the middle of an edge, skip to the first full edge
+    //The edge skipped will be handled by the thread with previous id
+    if(file_char_counter != 0 && mmaped_file[file_char_counter-1] != '\n'){
+        for(; file_char_counter < (args -> to_char); file_char_counter++){
+            if(mmaped_file[file_char_counter] == '\n'){
+                file_char_counter++;
+                break;
+            }
+        }
+    }
+
+    while (file_char_counter < args -> to_char) {  //Reads until EOF
+
+        //Read the file char by char until EOL
+        uint32_t c = 0;
+        for(; c < sizeof(char_buffer) && file_char_counter < file_size; c++){
+            if(mmaped_file[file_char_counter] == '\n'){
+                file_char_counter++;
+                break;
+            }
+
+            char_buffer[c] = mmaped_file[file_char_counter];
+            file_char_counter++;
+        }
+        char_buffer[c] = 0; //Without this, some remains of previous edges may be considered
+
+        //Each edge is formed by two unsigned integers separated by a space
+        sscanf(char_buffer, "%d %d", &node1, &node2);
+
+        //Edges are considered valid from the file (no duplicates, node1 != node2)
+        if(node1 < node2){  //Nodes in edge need to be ordered
+           current_edge = (edge_t){node1, node2};
+        }else{
+           current_edge = (edge_t){node2, node1};
+        }
+        
         insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> dpu_input_arguments_ptr, args -> th_id);
     }
 
