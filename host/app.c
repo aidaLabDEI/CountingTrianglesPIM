@@ -151,13 +151,13 @@ int main(int argc, char* argv[]){
     pthread_t threads[NR_THREADS];
     handle_edges_thread_args_t he_th_args[NR_THREADS];  //Arguments for the threads
 
-    uint32_t char_per_thread = (file_stat.st_size - characters_edges_in_graph)/NR_THREADS;  //Number of chars that each thread will handle
+    uint64_t char_per_thread = (file_stat.st_size - characters_edges_in_graph)/NR_THREADS;  //Number of chars that each thread will handle
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
 
         //Determine the sections of chars that each thread will consider
-        uint32_t from_char_in_file = char_per_thread * th_id + characters_edges_in_graph;
-        uint32_t to_char_in_file;  //Not included
+        uint64_t from_char_in_file = char_per_thread * th_id + characters_edges_in_graph;
+        uint64_t to_char_in_file;  //Not included
         if(th_id != NR_THREADS-1){
             to_char_in_file = char_per_thread * (th_id+1) + characters_edges_in_graph;
         }else{
