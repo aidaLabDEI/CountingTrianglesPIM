@@ -45,10 +45,10 @@ void* handle_edges_file(void* args_thread){  //Run in multiple threads
 
     edge_t current_edge;
 
-    uint32_t file_size = args -> file_size;
+    uint64_t file_size = args -> file_size;
     char* mmaped_file = args -> mmaped_file;
 
-    uint32_t file_char_counter = args -> from_char;
+    uint64_t file_char_counter = args -> from_char;
 
     //If the division makes the thread start in the middle of an edge, skip to the first full edge
     //The edge skipped will be handled by the thread with previous id
@@ -85,7 +85,7 @@ void* handle_edges_file(void* args_thread){  //Run in multiple threads
         }else{
            current_edge = (edge_t){node2, node1};
         }
-        
+
         insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> dpu_input_arguments_ptr, args -> th_id);
     }
 
