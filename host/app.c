@@ -29,6 +29,9 @@
 #define TESTING 0
 
 int main(int argc, char* argv[]){
+    struct timeval start;
+    gettimeofday(&start, 0);
+
     /*ARGUMENTS HANDLING*/
     if(argc < 5){  //First argument is executable
         printf("Invalid number of arguments. Please insert the seed for the random number generator (0 for random seed), ");
@@ -65,55 +68,34 @@ int main(int argc, char* argv[]){
         sample_size_dpus = MAX_SAMPLE_SIZE;
     }
 
+    /*READ THE NUMBER OF EDGES IN THE GRAPH*/
     char* file_name = argv[4];
-
-    /*READ THE FILE CONTAINING THE GRAPH*/
-
-    //Start measuring time after handling the input
-    struct timeval start;
-    gettimeofday(&start, 0);
-
-    FILE * file_ptr = fopen(file_name, "r");
-    if(file_ptr == NULL){
-        printf("File not found.\n");
+    struct stat file_stat;
+    if(stat(file_name, &file_stat) != 0){
+        printf("The file does not exist.\n");
         return 1;
     }
 
+    //Map file to memory to speed up access by threads
+    int file_fd = open(file_name, O_RDONLY);
+    char* mmaped_file = (char*) mmap (0, file_stat.st_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, file_fd, 0);
+    close(file_fd);
+
+    //Get the number of edges in the graph (first line in the file)
     char char_buffer[32];
-    uint32_t edges_in_graph;
 
-    //Read the first line that contains the number of edges in the graph
-    if(NULL == fgets(char_buffer, sizeof(char_buffer), file_ptr)){
-        printf("File is empty.\n");
-        return 1;
-    }
-    sscanf(char_buffer, "%d", &edges_in_graph);
-
-    edge_t* graph = (edge_t*) malloc(edges_in_graph * sizeof(edge_t));
-
-    edge_t current_edge;
-    uint32_t offset_in_graph = 0;
-    uint32_t node1, node2;
-
-    while (fgets(char_buffer, sizeof(char_buffer), file_ptr) != NULL) {  //Reads until EOF
-
-        //Each edge is formed by two unsigned integers separated by a space
-        sscanf(char_buffer, "%d %d", &node1, &node2);
-
-        if(node1 < node2){  //Nodes in edge need to be ordered
-            current_edge = (edge_t){node1, node2};
-        }else{
-            current_edge = (edge_t){node2, node1};
+    uint32_t characters_edges_in_graph = 0;  //Count the characters used to express the edges in the graph. Skip these characters when reading edges
+    for(; characters_edges_in_graph < sizeof(char_buffer) && characters_edges_in_graph < file_stat.st_size; characters_edges_in_graph++){
+        if(mmaped_file[characters_edges_in_graph] == '\n'){
+            break;
         }
-
-        graph[offset_in_graph++] = current_edge;
+        char_buffer[characters_edges_in_graph] = mmaped_file[characters_edges_in_graph];
     }
+    char_buffer[characters_edges_in_graph] = 0;
+    characters_edges_in_graph++;  //Skip '\n' character
 
-    struct timeval now;
-    gettimeofday(&now, 0);
-    float read_graph_time = timedifference_msec(start, now);
-    printf("Time to read the graph file: %f\n", read_graph_time);
-    gettimeofday(&start, 0);
+    uint32_t edges_in_graph;
+    sscanf(char_buffer, "%d", &edges_in_graph);
 
     /*DPU INFO CREATION*/
 
@@ -151,6 +133,7 @@ int main(int argc, char* argv[]){
     //Launch DPUs for setup
     DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
 
+    struct timeval now;
     gettimeofday(&now, 0);
     float setup_time = timedifference_msec(start, now);
     printf("Time for the setup: %f\n", setup_time);
@@ -168,20 +151,20 @@ int main(int argc, char* argv[]){
     pthread_t threads[NR_THREADS];
     handle_edges_thread_args_t he_th_args[NR_THREADS];  //Arguments for the threads
 
-    uint32_t edges_per_thread = edges_in_graph/NR_THREADS;  //Number of edges that each thread will handle
+    uint64_t char_per_thread = (file_stat.st_size - characters_edges_in_graph)/NR_THREADS;  //Number of chars that each thread will handle
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
 
-        ///Determine the sections of edges that each thread will consider
-        uint32_t from_edge = edges_per_thread * th_id;
-        uint32_t to_edge;  //Not included
+        //Determine the sections of chars that each thread will consider
+        uint64_t from_char_in_file = char_per_thread * th_id + characters_edges_in_graph;
+        uint64_t to_char_in_file;  //Not included
         if(th_id != NR_THREADS-1){
-            to_edge = edges_per_thread * (th_id+1);
+            to_char_in_file = char_per_thread * (th_id+1) + characters_edges_in_graph;
         }else{
-            to_edge = edges_in_graph;  //If last thread, handle all remaining edges
+            to_char_in_file = file_stat.st_size;  //If last thread, handle all remaining chars
         }
 
-        he_th_args[th_id] = (handle_edges_thread_args_t){th_id, graph, from_edge, to_edge, &input_arguments, dpu_info_array, &dpu_set, &send_to_dpus_mutex};
+        he_th_args[th_id] = (handle_edges_thread_args_t){th_id, mmaped_file, file_stat.st_size, from_char_in_file, to_char_in_file, &input_arguments, dpu_info_array, &dpu_set, &send_to_dpus_mutex};
 
         pthread_create(&threads[th_id], NULL, handle_edges_file, (void *)&he_th_args[th_id]);
     }
