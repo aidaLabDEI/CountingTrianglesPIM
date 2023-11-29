@@ -6,6 +6,9 @@
 
 #include "../common/common.h"
 
+//Allow for files bigger than 4GB
+#define _FILE_OFFSET_BITS 64
+
 //Given X bytes of RAM available, X should be divided by (NR_THREADS * NR_DPUS * sizeof(edge_t))
 //At the same time, it should not be more than 4194304 (32MB of edges)
 #ifndef BATCH_SIZE_EDGES
@@ -20,10 +23,11 @@ typedef struct{
 typedef struct{
     uint32_t th_id;
 
-    edge_t* graph;
+    char* mmaped_file;  //Information about file
+    uint64_t file_size;
 
-    uint32_t from_edge;  //Section of the graph that the thread needs to handle
-    uint32_t to_edge;
+    uint64_t from_char;  //Section of the file that the thread needs to read
+    uint64_t to_char;
 
     dpu_arguments_t* dpu_input_arguments_ptr;
     dpu_info_t* dpu_info_array;
