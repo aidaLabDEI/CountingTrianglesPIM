@@ -39,7 +39,7 @@ __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;
 
 //Transfer the data first to the MRAM, and then to the WRAM.
 //This to allow the WRAM buffer to be allocated dynamically
-__mram_ptr node_frequency_t top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;  //It does not interfere with the batch
+__mram_ptr node_frequency_t* top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;  //It does not interfere with the batch
 node_frequency_t* top_frequent_nodes;
 __host uint64_t nr_top_nodes;
 
@@ -81,7 +81,7 @@ int main() {
         //Make only one tasklet set up the variables for the entire DPU (and so all tasklets)
         if(me() == 0){
             mem_reset();  //Reset WRAM heap before starting
-            srand(DPU_INPUT_ARGUMENTS.random_seed);  //Effect is global
+            srand(DPU_INPUT_ARGUMENTS.seed);  //Effect is global
 
             //Calculate the initial position of the sample (at the end of the MRAM heap)
             //Considering that the MRAM has 64MB. -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible (overflow in edge cases)

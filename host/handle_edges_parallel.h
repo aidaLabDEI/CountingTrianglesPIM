@@ -41,11 +41,11 @@ typedef struct{
 
     //Send the batches
     struct dpu_set_t* dpu_set;
-    pthread_mutex_t* send_to_dpu_mutex;
-} handle_edges_thread_args_t;
+    pthread_mutex_t* send_to_dpus_mutex;
+} create_batches_args_t;
 
 //Hash function to get the color of a node
-inline uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr);
+uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr);
 
 //Get ordered colors of the edge
 edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* dpu_input_arguments_ptr);

@@ -1,4 +1,7 @@
 #include <stdint.h>
+#include <stdio.h>  //Print
+#include <sys/time.h>  //Measure execution time
+#include <stdlib.h>  //Exit
 
 #include "mg_hashtable.h"
 #include "host_util.h"
@@ -15,7 +18,7 @@ void usage(){
     printf(" -t # [Send a maximum of # top frequent nodes to the DPUs. Ignored if Misra-Gries is not used. Default value is 5]\n");
 
     printf(" -c # [Use # colors to color the nodes of the graph. Required]\n");
-    pritnf(" -f <filename> [Input Graph in Matrix Market format. Required]\n");
+    printf(" -f <filename> [Input Graph in Matrix Market format. Required]\n");
     exit(1);
 }
 
@@ -32,8 +35,8 @@ uint64_t get_free_memory(){
 
     char line[256];
     uint64_t ramKB = 0;
-    while(fgets(line, sizeof(buff), meminfo)){
-        if(sscanf(buff, "MemAvailable: %ld kB", &ramKB) == 1){
+    while(fgets(line, sizeof(line), meminfo)){
+        if(sscanf(line, "MemAvailable: %ld kB", &ramKB) == 1){
             break;
         }
     }
@@ -51,10 +54,10 @@ uint32_t global_top_freq(node_frequency_t** top_freq_th, node_frequency_t* resul
     //Can hold all the top frequencies from the threads
     node_freq_hashtable_t top_freq = create_hashtable(NR_THREADS * 2 * t);
 
-    int valid_nodes = 0;
+    uint32_t valid_nodes = 0;
     //For every top frequent node id in each thread
-    for(int th_id = 0; th_id < NR_THREADS; th_id++){
-        for(int i = 0; i < 2 * t; i++){
+    for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
+        for(uint32_t i = 0; i < 2 * t; i++){
 
             //The cell is invalid
             if(top_freq_th[th_id][i].frequency <= 0){
@@ -68,16 +71,16 @@ uint32_t global_top_freq(node_frequency_t** top_freq_th, node_frequency_t* resul
 
     //Select the top t edges to return to the main thread
     //No need to return all top k if only a few are used
-    for(int i = 0; i < t; i++){
+    for(uint32_t i = 0; i < t; i++){
         // Find the maximum element in unsorted array
-        int max_idx = i;
+        uint32_t max_idx = i;
         for(uint32_t j = i+1; j < top_freq.size; j++){
             if(top_freq.table[j].frequency > top_freq.table[max_idx].frequency){
               max_idx = j;
             }
         }
 
-        all_top_freq[i] = top_freq.table[max_idx];
+        result_top_f[i] = top_freq.table[max_idx];
 
         if(max_idx != i){
             node_frequency_t temp = top_freq.table[max_idx];

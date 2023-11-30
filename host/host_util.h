@@ -2,8 +2,9 @@
 #define __HOST_H__
 
 #include <stdint.h>
+#include <sys/time.h>  //Measure execution time
 
-#include "../../common.h"
+#include "../common/common.h"
 
 /*Wort case, for each edge there is a new unique node.
 considering 63MB free in the MRAM for the sample, considering that

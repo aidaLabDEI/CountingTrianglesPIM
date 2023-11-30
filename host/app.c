@@ -132,9 +132,9 @@ int main(int argc, char* argv[]){
     }
 
     //Number of triplets created given the colors. binom(c+2, 3)
-    uint32_t triplets_created = round((1.0/6) * color_number * (color_number+1) * (color_number+2));
+    uint32_t triplets_created = round((1.0/6) * colors * (colors+1) * (colors+2));
     if(triplets_created > NR_DPUS){
-        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no more than %d DPUs can be used.\n", color_number, triplets_created);
+        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no more than %d DPUs can be used.\n", colors, triplets_created);
         exit(1);
     }
 
@@ -149,9 +149,9 @@ int main(int argc, char* argv[]){
 
     ////Load the file into memory. Faster access from threads when reading edges
     struct stat file_stat;
-    stat(file_name, &file_stat);
+    stat(filename, &file_stat);
 
-    int file_fd = open(file_name, O_RDONLY);
+    int file_fd = open(filename, O_RDONLY);
     char* mmaped_file = (char*) mmap(0, file_stat.st_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, file_fd, 0);
     close(file_fd);
 
@@ -270,12 +270,12 @@ int main(int argc, char* argv[]){
             to_char_in_file = file_stat.st_size;  //If last thread, handle all remaining chars
         }
 
-        create_batches_args[th_id] = {
+        create_batches_args[th_id] = (create_batches_args_t){
             .th_id = th_id,
             .mmaped_file = mmaped_file, .file_size = file_stat.st_size, .from_char = from_char_in_file, .to_char = to_char_in_file,
             .seed = seed, .p = p, .edges_kept = 0, .edges_traversed = 0,
-            .k = k, .t = t, .top_freq = &top_freq[th_id],
-            .batch_size = batch_size_thread, .dpu_input_arguments_ptr = &input_arguments, .dpu_info_array = &dpu_info_array,
+            .k = k, .t = t, .top_freq = top_freq[th_id],
+            .batch_size = batch_size_thread, .dpu_input_arguments_ptr = &input_arguments, .dpu_info_array = dpu_info_array,
             .dpu_set = &dpu_set, .send_to_dpus_mutex = &send_to_dpus_mutex,
         };
 
@@ -292,7 +292,7 @@ int main(int argc, char* argv[]){
 
     if(k > 0){
         node_frequency_t top_frequent_nodes[t];
-        uint64_t nr_top_nodes = global_top_freq(top_freq, top_frequent_nodes);
+        uint64_t nr_top_nodes = global_top_freq(top_freq, top_frequent_nodes, t);
 
         DPU_ASSERT(dpu_broadcast_to(dpu_set, "top_frequent_nodes_MRAM", 0, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
         DPU_ASSERT(dpu_broadcast_to(dpu_set, "nr_top_nodes", 0, &nr_top_nodes, sizeof(nr_top_nodes), DPU_XFER_DEFAULT));
@@ -352,10 +352,10 @@ int main(int argc, char* argv[]){
         if(dpu_id < triplets_created){
 
             if(dpu_id == same_color_triplet_id){
-                addition_multiplier = 2 - color_number;
+                addition_multiplier = 2 - colors;
 
                 //Add binom(C + 1 - first_triplet_color, 2) to the previous id
-                same_color_triplet_id += 0.5 * (color_number - first_triplet_color) * (color_number - first_triplet_color + 1);
+                same_color_triplet_id += 0.5 * (colors - first_triplet_color) * (colors - first_triplet_color + 1);
                 first_triplet_color++;
             }
         }
@@ -366,7 +366,7 @@ int main(int argc, char* argv[]){
     ////Adjust the result due to lost triangles caused by uniform sampling
     double edges_kept = 0;
     for(int i = 0; i < NR_THREADS; i++){
-        edges_kept += he_th_args[i].edges_kept;
+        edges_kept += create_batches_args[i].edges_kept;
     }
 
     //It's not used just p to be more precise

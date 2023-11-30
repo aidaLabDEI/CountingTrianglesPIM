@@ -8,11 +8,11 @@
 #include <stdlib.h>  //Random
 #include <limits.h>  //Max values
 
-#include "host_util.h"
+#include "handle_edges_parallel.h"
 #include "../common/common.h"
 #include "mg_hashtable.h"
 
-inline uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr){
+uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr){
     uint32_t p = dpu_input_arguments_ptr -> hash_parameter_p;
     uint32_t a = dpu_input_arguments_ptr -> hash_parameter_a;
     uint32_t b = dpu_input_arguments_ptr -> hash_parameter_b;
@@ -58,8 +58,9 @@ void* handle_edges_file(void* args_thread){
     //Seed used for the local random number genetor
     uint32_t local_seed = args->seed + args->th_id;
 
+    node_freq_hashtable_t top_freq;
     if(args->k > 0){
-        node_freq_hashtable_t top_freq = create_hashtable(args->k);
+        top_freq = create_hashtable(args->k);
     }
 
     edge_t current_edge;
@@ -102,17 +103,17 @@ void* handle_edges_file(void* args_thread){
             update_top_frequency(&top_freq, node2);
         }
 
-        insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> dpu_input_arguments_ptr, args -> th_id, , args -> send_to_dpu_mutex, args -> dpu_set);
+        insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> dpu_input_arguments_ptr, args -> th_id, args -> send_to_dpus_mutex, args -> dpu_set);
     }
 
-    send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpu_mutex, args -> dpu_set);
+    send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpus_mutex, args -> dpu_set);
 
     if(args->k > 0){
         //Select the top 2*t edges to return to the main thread
         //No need to return all top k if only a few are used
-        for(int i = 0; i < 2 * args->t; i++){
+        for(uint32_t i = 0; i < 2 * args->t; i++){
             // Find the maximum element in unsorted array
-            int max_idx = i;
+            uint32_t max_idx = i;
             //Consider only valid entries
             for(uint32_t j = i+1; j < top_freq.size; j++){
                 if(top_freq.table[j].frequency > top_freq.table[max_idx].frequency){
@@ -160,7 +161,7 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
         (current_dpu_info -> batch)[(current_dpu_info -> edge_count_batch)++] = current_edge;
 
         if(current_dpu_info->edge_count_batch == batch_size){
-            send_batches(th_id, dpu_info_array,send_to_dpu_mutex, dpu_set);
+            send_batches(th_id, dpu_info_array, mutex, dpu_set);
         }
 
         current_dpu_id++;
@@ -181,7 +182,7 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
             (current_dpu_info -> batch)[(current_dpu_info -> edge_count_batch)++] = current_edge;
 
             if(current_dpu_info->edge_count_batch == batch_size){
-                send_batches(th_id, dpu_info_array,send_to_dpu_mutex, dpu_set);
+                send_batches(th_id, dpu_info_array, mutex, dpu_set);
             }
         }
 
@@ -200,7 +201,7 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
             (current_dpu_info -> batch)[(current_dpu_info -> edge_count_batch)++] = current_edge;
 
             if(current_dpu_info->edge_count_batch == batch_size){
-                send_batches(th_id, dpu_info_array,send_to_dpu_mutex, dpu_set);
+                send_batches(th_id, dpu_info_array, mutex, dpu_set);
             }
 
             current_dpu_id += (1.0/2) * (colors - c1) * (colors - c1 + 1);
@@ -221,7 +222,7 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         }
     }
 
-    for(uint32_t batch_offset = 0; batch_offset < max_edges_to_send; batche_offset += max_edges_per_transfer){
+    for(uint32_t batch_offset = 0; batch_offset < max_edges_to_send; batch_offset += max_edges_per_transfer){
 
         //Size of the biggest remaining batch
         uint32_t max_remaining_edges_to_send = 0;
