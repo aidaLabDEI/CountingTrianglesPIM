@@ -171,6 +171,7 @@ int main(int argc, char* argv[]){
         if(mmaped_file[ignored_chars] == '\n'){
             if(line[0] == '%'){
                 line_index = 0;  //Comment line, ignore it
+                continue;
             }else{
                 ignored_chars++;  //Skip '\n'
                 break;  //First line containing graph characteristics
@@ -196,9 +197,9 @@ int main(int argc, char* argv[]){
 
     //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges (with colors >= 3).
     //Edges in graph are multiplied by p to consider only kept edges
-    //Added 25% to try sending only a single batch
+    //Added 50% to try sending only a single batch
     //This number needs to be divided by the number of threads.
-    uint32_t batch_size_thread = 1.25 * ((6.0 / (colors*colors)) * edges_in_graph * p) / NR_THREADS;
+    uint32_t batch_size_thread = 1.5 * ((6.0 / (colors*colors)) * edges_in_graph * p) / NR_THREADS;
     batch_size_thread = batch_size_thread > max_batch_size ? max_batch_size : batch_size_thread;
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
@@ -324,6 +325,7 @@ int main(int argc, char* argv[]){
     }
     free(dpu_info_array);
     pthread_mutex_destroy(&send_to_dpus_mutex);
+    munmap(mmaped_file, file_stat.st_size);  //Free mmapped memory
 
     if(k > 0){
         for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
