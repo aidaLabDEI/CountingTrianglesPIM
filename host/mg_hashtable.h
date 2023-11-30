@@ -19,6 +19,9 @@ typedef struct{
 //Returns an initialized hash table that can contain k
 node_freq_hashtable_t create_hashtable(uint32_t k);
 
+//Frees the memory occupied by the hastable
+void delete_hashtable(node_freq_hashtable_t* table);
+
 //Returns if a value is a prime number
 bool is_prime(uint32_t value);
 
@@ -30,5 +33,8 @@ uint32_t first_prime_over(uint32_t value);
 //If the node id is not present, if there is still enough space, add the node id
 //If the node id is not present and there is not enough space, decrement all values
 void update_top_frequency(node_freq_hashtable_t* table, uint32_t node_id);
+
+//Take t most frequent nodes from the threads
+void update_global_top_frequency(node_freq_hashtable_t* table, uint32_t node_id, uint32_t node_frequency);
 
 #endif //__MG_HASHTABLE_H__
