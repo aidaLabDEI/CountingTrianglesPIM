@@ -37,6 +37,12 @@ __host uint64_t edges_in_batch;
 __mram_ptr edge_t* sample;
 __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;
 
+//Transfer the data first to the MRAM, and then to the WRAM.
+//This to allow the WRAM buffer to be allocated dynamically
+__mram_ptr node_frequency_t top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;  //It does not interfere with the batch
+node_frequency_t* top_frequent_nodes;
+__host uint64_t nr_top_nodes;
+
 //The setup happens only once
 bool is_setup_done = false;
 
@@ -78,8 +84,10 @@ int main() {
             srand(DPU_INPUT_ARGUMENTS.random_seed);  //Effect is global
 
             //Calculate the initial position of the sample (at the end of the MRAM heap)
-            //Considering that the MRAM has 64MB. -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible
+            //Considering that the MRAM has 64MB. -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible (overflow in edge cases)
             sample = (__mram_ptr edge_t*) (64*1024*1024 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
+
+            top_frequent_nodes = mem_alloc(DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
         }
         barrier_wait(&sync_tasklets);  //Wait for memory reset
         tasklets_buffer_ptrs[me()] = mem_alloc(WRAM_BUFFER_SIZE);  //Create the buffer in the WRAM for every tasklet. Generic void* pointer
@@ -112,8 +120,7 @@ int main() {
             //Transfer some edges of the batch to the WRAM
             uint32_t edges_in_batch_buffer = 0;
             if(batch_buffer_index == edges_in_wram_cache){
-                //It is necessary to read only the edges assigned to the tasklet. So, only the needed edges, until
-                //the maximum allowed, are read
+                //It is necessary to read only the edges assigned to the tasklet.
                 if((edge_count_batch_to - edge_count_batch_local) >= edges_in_wram_cache){
                     edges_in_batch_buffer = edges_in_wram_cache;
                 }else{
@@ -200,28 +207,22 @@ int main() {
         uint32_t from_edge = edges_per_tasklet * tasklet_id;
         uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
 
-        //Each message will contain the local_max_node_id. Dividing edges evenly across tasklets is fair
-        messages[tasklet_id]  = determine_max_node_id(sample, from_edge, to_edge, wram_buffer_ptr);
-
-        //Tree-based search for the maximum element
+        //Transfer the most frequent nodes from the MRAM to the WRAM
+        if(tasklet_id == 0){
+            mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
+        }
         barrier_wait(&sync_tasklets);
 
-        #pragma unroll
-        for (uint32_t offset = 1; offset < NR_TASKLETS; offset <<= 1){
-            if((tasklet_id & (2*offset - 1)) == 0){
-                //Look for the maximum local_max_node_id
-                messages[tasklet_id] = messages[tasklet_id] > messages[tasklet_id + offset] ? messages[tasklet_id] : messages[tasklet_id + offset];
-            }
-            barrier_wait(&sync_tasklets);
-        }
+        frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, DPU_INPUT_ARGUMENTS.max_node_id);
+        barrier_wait(&sync_tasklets);
 
         //The first tasklet message will contain the maximum node id
-        sort_sample(edges_in_sample, sample, wram_buffer_ptr, messages[0]);
+        sort_sample(edges_in_sample, sample, wram_buffer_ptr, DPU_INPUT_ARGUMENTS.max_node_id);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
 
         //After the quicksort, some pointers change. Does not matter if set by all tasklets
         sample = DPU_MRAM_HEAP_POINTER;
-        AFTER_SAMPLE_HEAP_POINTER = sample + edges_in_sample;  //Just a sum without sizeof because sample's type is edge_t*
+        AFTER_SAMPLE_HEAP_POINTER = (__mram_ptr void*)sample + edges_in_sample * sizeof(edge_t);  //Just a sum without sizeof because sample's type is edge_t*
 
         //Each message will contain the local_unique_nodes
         messages[tasklet_id] = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);

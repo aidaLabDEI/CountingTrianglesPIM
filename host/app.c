@@ -20,98 +20,187 @@
 
 #include "../common/common.h"
 #include "host_util.h"
+#include "handle_edges_parallel.h"
+#include "mg_hashtable.h"
 
 #ifndef DPU_BINARY
 #define DPU_BINARY "./task"
 #endif
 
-//If TESTING = 1, the output numbers have no description. Used to make easier to parse output when testing
-#define TESTING 0
+static int32_t seed;  //Seed for random numbers
+static uint32_t sample_size;  //Sample size in DPUs
+static float p;  //Probability of ignoring edges
+static uint32_t k;  //Size of Misra-Gries dictionary for each thread
+static uint32_t t;  //Max number of top frequent nodes to send to the DPUs
+static uint32_t colors;  //Number of colors to use
+static char* filename;  //Name of the file in Matrix Market format
 
 int main(int argc, char* argv[]){
-    struct timeval start;
-    gettimeofday(&start, 0);
 
-    /*ARGUMENTS HANDLING*/
-    if(argc < 5){  //First argument is executable
-        printf("Invalid number of arguments. Please insert the seed for the random number generator (0 for random seed), ");
-        printf("the size of the sample inside the DPUs (number of edges) (0 for max allowed value), the number of colors to use and ");
-        printf("the file name containing all the edges.\n");
-        return 1;
+    //Display the usage
+    if (argc < 1) usage();
+
+    ////Initialise values before reading input
+    srand(time(NULL));
+    seed = rand();
+    sample_size = MAX_SAMPLE_SIZE;
+    p = 0;
+    k = 0;
+    t = 5;
+    colors = 0;
+    filename = "";
+
+    ////Read input
+    while ((argc > 1) && (argv[1][0] == '-')) {
+
+        //Wrong number of arguments remaining
+        if (argc < 3){
+            usage();
+        }
+
+        switch (argv[1][1]){
+            case 's':
+                seed = atoi(argv[2]);
+                argv+=2;
+                argc-=2;
+                break;
+
+            case 'M':
+                sample_size = atoi(argv[2]);
+                argv+=2;
+                argc-=2;
+                break;
+
+            case 'p':
+                p = atof(argv[2]);
+                argv+=2;
+                argc-=2;
+                break;
+
+            case 'k':
+                k = atoi(argv[2]);
+                argv+=2;
+                argc-=2;
+                break;
+
+            case 't':
+                t = atoi(argv[2]);
+                argv+=2;
+                argc-=2;
+                break;
+
+            case 'c':
+                colors = atoi(argv[2]);
+                argv+=2;
+                argc-=2;
+                break;
+
+            case 'f':
+                filename = argv[2];
+                argv+=2;
+                argc-=2;
+                break;
+
+            default:
+                printf("Wrong argument: %s\n", argv[1]);
+                usage();
+                break;
+        }
     }
 
-    uint32_t random_seed = atoi(argv[1]);
+    ////Checking input
+    srand(seed);
 
-    if(random_seed == 0){  //Set random seed that depends on time
-        srand(time(NULL));
-        random_seed = rand();
-    }else{
-        srand(random_seed);  //Set given seed
+    if(sample_size > MAX_SAMPLE_SIZE){
+        printf("Sample size is too big. Max possible value is %d.\n", MAX_SAMPLE_SIZE);
+        exit(1);
     }
 
-    uint32_t color_number = atoi(argv[3]);  //Number of colors used to color the nodes
+    if(p < 0 || p > 1){
+        printf("Invalid percentage of discarded edges.\n");
+        exit(1);
+    }
+
+    if(t > k){
+        printf("Invalid parameters for Misra-Gries.\n");
+        exit(1);
+    }
+
+    if(colors == 0){
+        printf("Invalid number of colors.\n");
+        exit(1);
+    }
 
     //Number of triplets created given the colors. binom(c+2, 3)
     uint32_t triplets_created = round((1.0/6) * color_number * (color_number+1) * (color_number+2));
     if(triplets_created > NR_DPUS){
-        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no less than %d DPUs can be used.\n", color_number, triplets_created);
-        return 1;
+        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no more than %d DPUs can be used.\n", color_number, triplets_created);
+        exit(1);
     }
 
-    uint32_t sample_size_dpus = atoi(argv[2]);  //Size of the sample (number of edges) inside the DPUs
-    if(sample_size_dpus > MAX_SAMPLE_SIZE){
-        printf("Sample size too big. The limit is: %d.\n", MAX_SAMPLE_SIZE);
-        return 1;
+    if(access(filename, F_OK) != 0){
+        printf("File does not exist.\n");
+        exit(1);
     }
 
-    if(sample_size_dpus == 0){
-        sample_size_dpus = MAX_SAMPLE_SIZE;
-    }
+    ////Start counting the time
+    struct timeval start;
+    gettimeofday(&start, 0);
 
-    /*READ THE NUMBER OF EDGES IN THE GRAPH*/
-    char* file_name = argv[4];
+    ////Load the file into memory. Faster access from threads when reading edges
     struct stat file_stat;
-    if(stat(file_name, &file_stat) != 0){
-        printf("The file does not exist.\n");
-        return 1;
-    }
+    stat(file_name, &file_stat);
 
-    //Map file to memory to speed up access by threads
     int file_fd = open(file_name, O_RDONLY);
-    char* mmaped_file = (char*) mmap (0, file_stat.st_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, file_fd, 0);
+    char* mmaped_file = (char*) mmap(0, file_stat.st_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, file_fd, 0);
     close(file_fd);
 
-    //Get the number of edges in the graph (first line in the file)
-    char char_buffer[32];
+    //Get the maximum node id inside the graph and the number of edges
+    //The file is in Matrix Market format. Ignore lines that start with %
+    //First real line contains two times the maximum node id and then the number of edges
+    char line[256];
+    uint32_t line_index = 0;
 
-    uint32_t characters_edges_in_graph = 0;  //Count the characters used to express the edges in the graph. Skip these characters when reading edges
-    for(; characters_edges_in_graph < sizeof(char_buffer) && characters_edges_in_graph < file_stat.st_size; characters_edges_in_graph++){
-        if(mmaped_file[characters_edges_in_graph] == '\n'){
-            break;
+    uint32_t ignored_chars = 0;  //Count the characters already read
+    for(; ignored_chars < sizeof(line) && ignored_chars < file_stat.st_size; ignored_chars++){
+
+        if(mmaped_file[ignored_chars] == '\n'){
+            if(line[0] == '%'){
+                line_index = 0;  //Comment line, ignore it
+            }else{
+                ignored_chars++;  //Skip '\n'
+                break;  //First line containing graph characteristics
+            }
         }
-        char_buffer[characters_edges_in_graph] = mmaped_file[characters_edges_in_graph];
+        line[line_index++] = mmaped_file[ignored_chars];
     }
-    char_buffer[characters_edges_in_graph] = 0;
-    characters_edges_in_graph++;  //Skip '\n' character
+    line[line_index] = 0;
 
-    uint32_t edges_in_graph;
-    sscanf(char_buffer, "%d", &edges_in_graph);
+    uint32_t max_node_id, edges_in_graph;
+    if(sscanf(line, "%d %d %d", &max_node_id, &max_node_id, &edges_in_graph) != 3){
+        printf("Invalid graph format.\n");
+        exit(1);
+    }
 
-    /*DPU INFO CREATION*/
+    ////Allocate the memory used to store the batches to send to the DPUs
 
     //Each thread has its own data, so no mutexes are needed while inserting
     dpu_info_t* dpu_info_array = malloc(sizeof(dpu_info_t) * NR_THREADS * NR_DPUS);
 
+    //Limit the size of the batches to fit in memory (occupy a maximum of 90% of free memory)
+    uint32_t max_batch_size = (0.9 * get_free_memory() / sizeof(edge_t)) / (NR_THREADS * NR_DPUS);
+
     //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges.
+    //Edges in graph are multiplied by p to consider only kept edges
+    //Added 25% to try sending only a single batch
     //This number needs to be divided by the number of threads.
-    //Multiplied by 2 to avoid errors due to unlucky distribution (especially in small graphs with many DPUs)
-    //If the amount of edges per DPU per thread is too small, the multiplication is not enough to guarantee correctness
-    uint32_t max_expected_edges_per_dpu_per_thread = 2 * ((6.0 / (color_number*color_number)) * edges_in_graph) / NR_THREADS + 2500;
+    uint32_t batch_size_thread = 1.25 * ((6.0 / (colors*colors)) * edges_in_graph * p) / NR_THREADS;
+    batch_size_thread = batch_size_thread > max_batch_size ? max_batch_size : batch_size_thread;
 
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
             dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch = 0;
-            dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(max_expected_edges_per_dpu_per_thread * sizeof(edge_t));
+            dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(batch_size_thread * sizeof(edge_t));
         }
     }
 
@@ -120,14 +209,19 @@ int main(int argc, char* argv[]){
     uint32_t hash_parameter_a = rand() % (hash_parameter_p-1) + 1; // a in [1, p-1]
     uint32_t hash_parameter_b = rand() % hash_parameter_p; // b in [0, p-1]
 
-    /*INITIALIZING DPUs*/
+    ////Initializing DPUs
     struct dpu_set_t dpu_set, dpu;
 
     DPU_ASSERT(dpu_alloc(NR_DPUS, NULL, &dpu_set));
     DPU_ASSERT(dpu_load(dpu_set, DPU_BINARY, NULL));
 
-    /*SENDING THE SAME STARTING ARGUMENTS TO ALL DPUs*/
-    dpu_arguments_t input_arguments = {random_seed, sample_size_dpus, color_number, hash_parameter_p, hash_parameter_a, hash_parameter_b};
+    //Sending the input arguments to the DPUs
+    dpu_arguments_t input_arguments = {
+        .seed = seed, .sample_size = sample_size, .colors = colors,
+        .hash_parameter_p = hash_parameter_p, .hash_parameter_a = hash_parameter_a, .hash_parameter_b = hash_parameter_b,
+        .max_node_id = max_node_id, .t = t
+    };
+
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "DPU_INPUT_ARGUMENTS", 0, &input_arguments, sizeof(dpu_arguments_t), DPU_XFER_DEFAULT));
 
     //Launch DPUs for setup
@@ -135,13 +229,14 @@ int main(int argc, char* argv[]){
 
     struct timeval now;
     gettimeofday(&now, 0);
+
     float setup_time = timedifference_msec(start, now);
     printf("Time for the setup: %f\n", setup_time);
+
     gettimeofday(&start, 0);
 
-    /*SAMPLE CREATION*/
-
-    pthread_mutex_t send_to_dpus_mutex;  //Prevent from copying data to the DPUs before the others have finished handling the previous batch
+    ////Prepare variables for threads that will create the sample
+    pthread_mutex_t send_to_dpus_mutex;  //Prevent from copying data to the DPUs before the previous batch was processed
     if (pthread_mutex_init(&send_to_dpus_mutex, NULL) != 0) {
         printf("Mutex not initialised. Exiting.\n");
         return 1;
@@ -149,24 +244,42 @@ int main(int argc, char* argv[]){
 
     //Handle edges in different threads
     pthread_t threads[NR_THREADS];
-    handle_edges_thread_args_t he_th_args[NR_THREADS];  //Arguments for the threads
+    create_batches_args_t create_batches_args[NR_THREADS];
 
-    uint64_t char_per_thread = (file_stat.st_size - characters_edges_in_graph)/NR_THREADS;  //Number of chars that each thread will handle
+    //Contains the most frequent nodes in the section of edges analysed by a single thread
+    //Only top 2*t are kept considering that t are sent to the DPUs
+    node_frequency_t* top_freq[NR_THREADS];
+    for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
+        if(k > 0){
+            top_freq[th_id] = (node_frequency_t*) malloc(2 * t * sizeof(node_frequency_t));
+        }else{
+            top_freq[th_id] = NULL;  //Do not waste space if Misra-Gries is not used
+        }
+    }
 
+    ////Start edge creation
+    uint64_t char_per_thread = (file_stat.st_size - ignored_chars)/NR_THREADS;  //Number of chars that each thread will handle
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
 
         //Determine the sections of chars that each thread will consider
-        uint64_t from_char_in_file = char_per_thread * th_id + characters_edges_in_graph;
+        uint64_t from_char_in_file = char_per_thread * th_id + ignored_chars;
         uint64_t to_char_in_file;  //Not included
         if(th_id != NR_THREADS-1){
-            to_char_in_file = char_per_thread * (th_id+1) + characters_edges_in_graph;
+            to_char_in_file = char_per_thread * (th_id+1) + ignored_chars;
         }else{
             to_char_in_file = file_stat.st_size;  //If last thread, handle all remaining chars
         }
 
-        he_th_args[th_id] = (handle_edges_thread_args_t){th_id, mmaped_file, file_stat.st_size, from_char_in_file, to_char_in_file, &input_arguments, dpu_info_array, &dpu_set, &send_to_dpus_mutex};
+        create_batches_args[th_id] = {
+            .th_id = th_id,
+            .mmaped_file = mmaped_file, .file_size = file_stat.st_size, .from_char = from_char_in_file, .to_char = to_char_in_file,
+            .seed = seed, .p = p, .edges_kept = 0, .edges_traversed = 0,
+            .k = k, .t = t, .top_freq = &top_freq[th_id],
+            .batch_size = batch_size_thread, .dpu_input_arguments_ptr = &input_arguments, .dpu_info_array = &dpu_info_array,
+            .dpu_set = &dpu_set, .send_to_dpus_mutex = &send_to_dpus_mutex,
+        };
 
-        pthread_create(&threads[th_id], NULL, handle_edges_file, (void *)&he_th_args[th_id]);
+        pthread_create(&threads[th_id], NULL, handle_edges_file, (void*) &create_batches_args[th_id]);
     }
 
     //Wait for all threads to finish
@@ -176,6 +289,14 @@ int main(int argc, char* argv[]){
 
     //The threads launched the last batches, need to wait for them to be processed
     DPU_ASSERT(dpu_sync(dpu_set));
+
+    if(k > 0){
+        node_frequency_t top_frequent_nodes[t];
+        uint64_t nr_top_nodes = global_top_freq(top_freq, top_frequent_nodes);
+
+        DPU_ASSERT(dpu_broadcast_to(dpu_set, "top_frequent_nodes_MRAM", 0, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
+        DPU_ASSERT(dpu_broadcast_to(dpu_set, "nr_top_nodes", 0, &nr_top_nodes, sizeof(nr_top_nodes), DPU_XFER_DEFAULT));
+    }
 
     gettimeofday(&now, 0);
     float sample_creation_time = timedifference_msec(start, now);
@@ -188,19 +309,37 @@ int main(int argc, char* argv[]){
     uint64_t start_counting = 1;
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "start_counting", 0, &start_counting, sizeof(start_counting), DPU_XFER_DEFAULT));
 
-    //Launch the DPUs program one last time. The DPUs know that the file has ended and it is time to count the triangles
-    DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
+    //Launch the DPUs program one last time
+    DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
+
+    ////Free memory while DPUs are counting the triangles
+    for(int th_id = 0; th_id < NR_THREADS; th_id++){
+        for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+            free(dpu_info_array[th_id * NR_DPUS + dpu_id].batch);
+        }
+    }
+    free(dpu_info_array);
+    pthread_mutex_destroy(&send_to_dpus_mutex);
+
+    if(k > 0){
+        for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
+            free(top_freq[th_id]);
+        }
+    }
+
+    DPU_ASSERT(dpu_sync(dpu_set));
 
     uint64_t single_dpu_triangle_estimation[NR_DPUS];
 
-    uint32_t index;
-    DPU_FOREACH(dpu_set, dpu, index) {
-        DPU_ASSERT(dpu_prepare_xfer(dpu, &single_dpu_triangle_estimation[index]));
+    uint32_t dpu_id;
+    DPU_FOREACH(dpu_set, dpu, dpu_id) {
+        DPU_ASSERT(dpu_prepare_xfer(dpu, &single_dpu_triangle_estimation[dpu_id]));
     }
     DPU_ASSERT(dpu_push_xfer(dpu_set, DPU_XFER_FROM_DPU, "triangle_estimation", 0, sizeof(single_dpu_triangle_estimation[0]), DPU_XFER_DEFAULT));
 
     uint64_t total_triangle_estimation = 0;
 
+    ////Adjust the result knowing that some triangles may be counted multiple times
     //First color in the triplet section considered
     int first_triplet_color = 0;
     //id of the triplet (and DPU) that counts the triangle whose nodes are colored with the same color
@@ -224,6 +363,18 @@ int main(int argc, char* argv[]){
         total_triangle_estimation += single_dpu_triangle_estimation[dpu_id] * addition_multiplier;
     }
 
+    ////Adjust the result due to lost triangles caused by uniform sampling
+    double edges_kept = 0;
+    for(int i = 0; i < NR_THREADS; i++){
+        edges_kept += he_th_args[i].edges_kept;
+    }
+
+    //It's not used just p to be more precise
+    total_triangle_estimation /= pow((edges_kept/edges_in_graph), 3);
+
+    //Free the DPUs
+    DPU_ASSERT(dpu_free(dpu_set));
+
     gettimeofday(&now, 0);
 
     float triangle_counting_time = timedifference_msec(start, now);
@@ -235,25 +386,4 @@ int main(int argc, char* argv[]){
     /*DPU_FOREACH(dpu_set, dpu) {
         DPU_ASSERT(dpu_log_read(dpu, stdout));
     }*/
-
-    if(TESTING){
-        printf("%ld\n", total_triangle_estimation);
-        printf("%f\n", setup_time);
-        printf("%f\n", sample_creation_time);
-        printf("%f\n", triangle_counting_time);
-        printf("%ld\n", total_triangle_estimation);
-    }
-
-    //Free everything
-    DPU_ASSERT(dpu_free(dpu_set));
-
-    for(int th_id = 0; th_id < NR_THREADS; th_id++){
-        for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            free(dpu_info_array[th_id * NR_DPUS + dpu_id].batch);
-        }
-    }
-
-    free(dpu_info_array);
-
-    pthread_mutex_destroy(&send_to_dpus_mutex);
 }

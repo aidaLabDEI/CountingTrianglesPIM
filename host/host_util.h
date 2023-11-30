@@ -1,57 +1,28 @@
-#ifndef __HOST_UTIL_H__
-#define __HOST_UTIL_H__
+#ifndef __HOST_H__
+#define __HOST_H__
 
-#include <sys/time.h>
-#include <dpu.h>
+#include <stdint.h>
 
-#include "../common/common.h"
+#include "../../common.h"
 
-//Allow for files bigger than 4GB
-#define _FILE_OFFSET_BITS 64
-
-//Given X bytes of RAM available, X should be divided by (NR_THREADS * NR_DPUS * sizeof(edge_t))
-//At the same time, it should not be more than 4194304 (32MB of edges)
-#ifndef BATCH_SIZE_EDGES
-#define BATCH_SIZE_EDGES 1048576
+/*Wort case, for each edge there is a new unique node.
+considering 63MB free in the MRAM for the sample, considering that
+for every edge 16 bytes are occupied, there can be 63MB/16B = 4063232 edges
+*/
+#ifndef MAX_SAMPLE_SIZE
+#define MAX_SAMPLE_SIZE 4128768
 #endif
 
-typedef struct{
-    edge_t* batch;  //Pointer to the array containing the edges in the current batch for the DPU
-    uint64_t edge_count_batch;  //Current number of edges in the batch for the DPU
-}dpu_info_t;
-
-typedef struct{
-    uint32_t th_id;
-
-    char* mmaped_file;  //Information about file
-    uint64_t file_size;
-
-    uint64_t from_char;  //Section of the file that the thread needs to read
-    uint64_t to_char;
-
-    dpu_arguments_t* dpu_input_arguments_ptr;
-    dpu_info_t* dpu_info_array;
-    struct dpu_set_t* dpu_set;
-
-    pthread_mutex_t* send_to_dpu_mutex;
-} handle_edges_thread_args_t;
-
-//Hash function to get the color of a node
-uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr);
-
-//Get ordered colors of the edge
-edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* dpu_input_arguments_ptr);
-
-//Function executed by each thread handling the edges. The file is read and the edges are inserted in the correct batch
-void* handle_edges_file(void* args_thread);
-
-//Insert the current edge into the correct batches considering how triplets are assigned to the DPUs
-void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, dpu_arguments_t* dpu_input_arguments_ptr, uint32_t th_id);
-
-//Send the full batch to the specific DPU. th_id_to is not included
-void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set);
+//Print how the program should be executed (arguments)
+void usage();
 
 //Get time difference between two moments to calculate execution time
 float timedifference_msec(struct timeval t0, struct timeval t1);
 
-#endif /* __HOST_UTIL_H_ */
+//Get the number of free bytes in memory
+uint64_t get_free_memory();
+
+//Find t most frequent nodes starting from the data from the threads
+uint32_t global_top_freq(node_frequency_t** top_freq_th, node_frequency_t* result_top_f, uint32_t t);
+
+#endif //__HOST_H__

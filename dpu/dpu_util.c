@@ -1,8 +1,10 @@
 #include <stdint.h> //Fixed size integers
 #include <stdio.h>  //Standard output for debug functions
 #include <mram.h>  //Transfer data between WRAM and MRAM
+#include <stdbool.h>
 
 #include "dpu_util.h"
+#include "../common/common.h"
 
 //Pseudo-random number generator
 uint32_t random_previous = 0;
@@ -19,12 +21,10 @@ uint32_t rand_range(uint32_t from, uint32_t to){
     return (rand() % (to - from + 1) + from);
 }
 
-uint32_t determine_max_node_id(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* wram_edges_buffer){
+void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* wram_edges_buffer, uint32_t nr_top_nodes, node_frequency_t* top_frequent_nodes, uint32_t max_node_id){
 
     uint32_t max_nr_edges_read = WRAM_BUFFER_SIZE/sizeof(edge_t);
     uint32_t edges_to_read = 0;
-
-    uint32_t max_node_id = 0;
 
     while(from_edge < to_edge){
 
@@ -42,15 +42,27 @@ uint32_t determine_max_node_id(__mram_ptr edge_t* sample, uint32_t from_edge, ui
         mram_read(&sample[from_edge], wram_edges_buffer, edges_to_read * sizeof(edge_t));
 
         for(uint32_t i = 0; i < edges_to_read; i++){
-            if(wram_edges_buffer[i].v > max_node_id){  //Checking only the second node is enough because the nodes in an edge are ordered
-                max_node_id = wram_edges_buffer[i].v;
+
+            //Replace the most frequent nodes to make their node ids the highest
+            for(uint32_t k = 0; k < nr_top_nodes; k++){
+
+                if(wram_edges_buffer[i].u == top_frequent_nodes[k].node_id){
+                    wram_edges_buffer[i].u = max_node_id + nr_top_nodes - k;
+                }
+
+                if(wram_edges_buffer[i].v == top_frequent_nodes[k].node_id){
+                    wram_edges_buffer[i].v = max_node_id + nr_top_nodes - k;
+                }
+            }
+
+            //Invert the nodes to make them ordered
+            if(wram_edges_buffer[i].u > wram_edges_buffer[i].v){
+                wram_edges_buffer[i] = (edge_t){wram_edges_buffer[i].v, wram_edges_buffer[i].u};
             }
         }
-
+        mram_write(wram_edges_buffer, &sample[from_edge], edges_to_read * sizeof(edge_t));
         from_edge += edges_to_read;
     }
-
-    return max_node_id;
 }
 
 //Debug function for printing the sample
