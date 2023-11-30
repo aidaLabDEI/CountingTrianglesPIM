@@ -10,14 +10,14 @@ void usage(){
 
     printf("Triangle Counting on the UPMEM architecture\n\n");
     printf("Usage:\n\n");
-    printf(" -s # [Seed # is used for the random number generator. Random if not given]\n");
-    printf(" -M # [The sample size inside the DPUs is #. Maximum allowed value if not given]\n");
-    printf(" -p # [Edges are kept with probability #. No edges are ignored (p = 1) if not given]\n");
+    printf(" -s #          [Seed # is used for the random number generator. Random if not given]\n");
+    printf(" -M #          [The sample size inside the DPUs is #. Maximum allowed value if not given]\n");
+    printf(" -p #          [Edges are kept with probability #. No edges are ignored (p = 1) if not given]\n");
 
-    printf(" -k # [The dictionary for Misra-Gries for each thread has a maximum of # entries. Misra-Gries is not used if not given]\n");
-    printf(" -t # [Send a maximum of # top frequent nodes to the DPUs. Ignored if Misra-Gries is not used. Default value is 5]\n");
+    printf(" -k #          [The dictionary for Misra-Gries for each thread has a maximum of # entries. Misra-Gries is not used if not given]\n");
+    printf(" -t #          [Send a maximum of # top frequent nodes to the DPUs. Ignored if Misra-Gries is not used. Default value is 5]\n");
 
-    printf(" -c # [Use # colors to color the nodes of the graph. Required]\n");
+    printf(" -c #          [Use # colors to color the nodes of the graph. Required]\n");
     printf(" -f <filename> [Input Graph in Matrix Market format. Required]\n");
     exit(1);
 }
