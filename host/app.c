@@ -38,13 +38,13 @@ static char* filename;  //Name of the file in Matrix Market format
 int main(int argc, char* argv[]){
 
     //Display the usage
-    if (argc < 1) usage();
+    if (argc < 2) usage();
 
     ////Initialise values before reading input
     srand(time(NULL));
     seed = rand();
     sample_size = MAX_SAMPLE_SIZE;
-    p = 0;
+    p = 1;
     k = 0;
     t = 5;
     colors = 0;
@@ -117,13 +117,17 @@ int main(int argc, char* argv[]){
     }
 
     if(p < 0 || p > 1){
-        printf("Invalid percentage of discarded edges.\n");
+        printf("Invalid percentage of kept edges.\n");
         exit(1);
     }
 
-    if(t > k){
+    if(k != 0 && t > k){
         printf("Invalid parameters for Misra-Gries.\n");
         exit(1);
+    }
+
+    if(k == 0){
+        t = 0;
     }
 
     if(colors == 0){
@@ -134,7 +138,7 @@ int main(int argc, char* argv[]){
     //Number of triplets created given the colors. binom(c+2, 3)
     uint32_t triplets_created = round((1.0/6) * colors * (colors+1) * (colors+2));
     if(triplets_created > NR_DPUS){
-        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no more than %d DPUs can be used.\n", colors, triplets_created);
+        printf("More triplets than DPUs. Use more DPUs or less colors. Given %d colors, no less than %d DPUs can be used.\n", colors, triplets_created);
         exit(1);
     }
 
@@ -190,7 +194,7 @@ int main(int argc, char* argv[]){
     //Limit the size of the batches to fit in memory (occupy a maximum of 90% of free memory)
     uint32_t max_batch_size = (0.9 * get_free_memory() / sizeof(edge_t)) / (NR_THREADS * NR_DPUS);
 
-    //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges.
+    //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges (with colors >= 3).
     //Edges in graph are multiplied by p to consider only kept edges
     //Added 25% to try sending only a single batch
     //This number needs to be divided by the number of threads.
@@ -294,7 +298,7 @@ int main(int argc, char* argv[]){
         node_frequency_t top_frequent_nodes[t];
         uint64_t nr_top_nodes = global_top_freq(top_freq, top_frequent_nodes, t);
 
-        DPU_ASSERT(dpu_broadcast_to(dpu_set, "top_frequent_nodes_MRAM", 0, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
+        DPU_ASSERT(dpu_broadcast_to(dpu_set, DPU_MRAM_HEAP_POINTER_NAME, 0, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
         DPU_ASSERT(dpu_broadcast_to(dpu_set, "nr_top_nodes", 0, &nr_top_nodes, sizeof(nr_top_nodes), DPU_XFER_DEFAULT));
     }
 
@@ -372,6 +376,11 @@ int main(int argc, char* argv[]){
     //It's not used just p to be more precise
     total_triangle_estimation /= pow((edges_kept/edges_in_graph), 3);
 
+    //For debug purpose, get standard output from the DPUs
+    /*DPU_FOREACH(dpu_set, dpu) {
+        DPU_ASSERT(dpu_log_read(dpu, stdout));
+    }*/
+
     //Free the DPUs
     DPU_ASSERT(dpu_free(dpu_set));
 
@@ -381,9 +390,4 @@ int main(int argc, char* argv[]){
     printf("Time to count the triangles: %f\n", triangle_counting_time);
 
     printf("Triangles: %ld\n", total_triangle_estimation);
-
-    //For debug purpose, get standard output from the DPUs
-    /*DPU_FOREACH(dpu_set, dpu) {
-        DPU_ASSERT(dpu_log_read(dpu, stdout));
-    }*/
 }

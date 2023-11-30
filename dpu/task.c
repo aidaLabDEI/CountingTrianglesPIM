@@ -87,7 +87,10 @@ int main() {
             //Considering that the MRAM has 64MB. -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible (overflow in edge cases)
             sample = (__mram_ptr edge_t*) (64*1024*1024 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
 
-            top_frequent_nodes = mem_alloc(DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
+            //If Misra-Gries is used
+            if(DPU_INPUT_ARGUMENTS.t != 0){
+                top_frequent_nodes = mem_alloc(DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
+            }
         }
         barrier_wait(&sync_tasklets);  //Wait for memory reset
         tasklets_buffer_ptrs[me()] = mem_alloc(WRAM_BUFFER_SIZE);  //Create the buffer in the WRAM for every tasklet. Generic void* pointer
@@ -203,18 +206,22 @@ int main() {
 
         uint32_t tasklet_id = me();  //Makes it easier to understand the code
 
-        uint32_t edges_per_tasklet = edges_in_sample/NR_TASKLETS;
-        uint32_t from_edge = edges_per_tasklet * tasklet_id;
-        uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
+        //If Misra-Gries is used
+        if(DPU_INPUT_ARGUMENTS.t != 0){
 
-        //Transfer the most frequent nodes from the MRAM to the WRAM
-        if(tasklet_id == 0){
-            mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
+            uint32_t edges_per_tasklet = edges_in_sample/NR_TASKLETS;
+            uint32_t from_edge = edges_per_tasklet * tasklet_id;
+            uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
+
+            //Transfer the most frequent nodes from the MRAM to the WRAM
+            if(tasklet_id == 0){
+                mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
+            }
+            barrier_wait(&sync_tasklets);
+
+            frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, DPU_INPUT_ARGUMENTS.max_node_id);
+            barrier_wait(&sync_tasklets);
         }
-        barrier_wait(&sync_tasklets);
-
-        frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, DPU_INPUT_ARGUMENTS.max_node_id);
-        barrier_wait(&sync_tasklets);
 
         //The first tasklet message will contain the maximum node id
         sort_sample(edges_in_sample, sample, wram_buffer_ptr, DPU_INPUT_ARGUMENTS.max_node_id);
