@@ -73,6 +73,7 @@ MUTEX_INIT(insert_into_sample);  //Virtual insertion. Increase counter, but inse
 //free index in the sample where it is possible to save data from the WRAM buffers
 uint32_t index_to_save_sample = 0;
 MUTEX_INIT(transfer_to_sample);  //Real transfer to the sample in the MRAM
+MUTEX_INIT(replace_in_sample);
 
 int main() {
 
@@ -181,10 +182,11 @@ int main() {
             edge_t current_edge = batch_buffer_wram[batch_buffer_index];
             batch_buffer_index++;
 
-            assert(current_edge.u <= current_edge.v);  //It is necessary for the nodes to be ordered inside the edge
             edge_count_batch_local++;
 
+            mutex_lock(replace_in_sample);
             total_edges++;
+            mutex_unlock(replace_in_sample);
 
             //Biased dice roll
             float u_rand = (float)rand() / ((float)UINT_MAX+1.0);  //UINT_MAX is the maximum value that can be returned by rand()
@@ -239,7 +241,7 @@ int main() {
 
         #pragma unroll
         for (uint32_t offset = 1; offset < NR_TASKLETS; offset <<= 1){
-            if((tasklet_id & (2*offset - 1)) == 0){
+            if((tasklet_id & ((offset<<1) - 1)) == 0){
                 //Add up the number of local unique nodes
                 messages[tasklet_id] += messages[tasklet_id + offset];
             }
@@ -254,7 +256,7 @@ int main() {
 
         #pragma unroll
         for (uint32_t offset = 1; offset < NR_TASKLETS; offset <<= 1){
-            if((tasklet_id & (2*offset - 1)) == 0){
+            if((tasklet_id & ((offset<<1) - 1)) == 0){
                 //Add up the number of local unique nodes
                 messages[tasklet_id] += messages[tasklet_id + offset];
             }
