@@ -94,12 +94,12 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
         uint32_t u_sample_buffer_index;
 
         //If in the edges buffer there are more edges than there can be in the u_buffer, copy everything that fits
-        if(max_nr_edges_read - (edges_read_buffer_offset-1) > max_edges_in_wram_cache){
+        if(edges_to_read - (edges_read_buffer_offset-1) > max_edges_in_wram_cache){
             u_edges_to_copy = max_edges_in_wram_cache;
             u_sample_buffer_index = 0;
         }else{
             //Copy only the last edges in the buffer
-            u_edges_to_copy = max_nr_edges_read - (edges_read_buffer_offset-1);
+            u_edges_to_copy = edges_to_read - (edges_read_buffer_offset-1);
             u_sample_buffer_index = max_edges_in_wram_cache - u_edges_to_copy;
         }
 
