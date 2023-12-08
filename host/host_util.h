@@ -8,7 +8,7 @@
 
 /*Wort case, for each edge there is a new unique node.
 considering 63MB free in the MRAM for the sample, considering that
-for every edge 16 bytes are occupied, there can be 63MB/16B = 4063232 edges
+for every edge 16 bytes are occupied, there can be 63MB/16B = 4128768 edges
 */
 #ifndef MAX_SAMPLE_SIZE
 #define MAX_SAMPLE_SIZE 4128768
