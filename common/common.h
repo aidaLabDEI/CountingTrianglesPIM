@@ -8,11 +8,6 @@ typedef struct {
     uint32_t seed;
 
     uint32_t sample_size;
-    uint32_t colors;
-
-    uint32_t hash_parameter_p;
-    uint32_t hash_parameter_a;
-    uint32_t hash_parameter_b;
 
     uint32_t max_node_id;
     uint32_t t;

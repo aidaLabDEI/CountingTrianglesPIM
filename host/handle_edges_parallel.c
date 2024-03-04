@@ -11,19 +11,15 @@
 #include "handle_edges_parallel.h"
 #include "../common/common.h"
 #include "mg_hashtable.h"
+#include "host_util.h"
 
-uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr){
-    uint32_t p = dpu_input_arguments_ptr -> hash_parameter_p;
-    uint32_t a = dpu_input_arguments_ptr -> hash_parameter_a;
-    uint32_t b = dpu_input_arguments_ptr -> hash_parameter_b;
+extern const hash_parameters_t coloring_params;  //Set by the main thread
 
-    return ((a * node_id + b) % p) % (dpu_input_arguments_ptr -> colors);
-}
+edge_colors_t get_edge_colors(edge_t edge, uint32_t colors){
 
-edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* dpu_input_arguments_ptr){
-
-    uint32_t color_u = get_node_color(edge.u, dpu_input_arguments_ptr);
-    uint32_t color_v = get_node_color(edge.v, dpu_input_arguments_ptr);
+    //Color hashing formula: ((a * id + b) % p ) % colors
+    uint32_t color_u = ((coloring_params.a * edge.u + coloring_params.b) % coloring_params.p) % colors;
+    uint32_t color_v = ((coloring_params.a * edge.v + coloring_params.b) % coloring_params.p) % colors;
 
     //The colors must be ordered
     if(color_u < color_v){
@@ -64,7 +60,7 @@ void* handle_edges_file(void* args_thread){
     }
 
     edge_t current_edge;
-    while (file_char_counter < args->to_char) {  //Reads until EOF
+    while (file_char_counter < args->to_char) {
 
         //Read the file char by char until EOL
         uint32_t c = 0;
@@ -79,14 +75,14 @@ void* handle_edges_file(void* args_thread){
         }
         char_buffer[c] = 0; //Without this, some remains of previous edges may be considered
 
-        args->edges_traversed++;  //Count the total edges that should have been considered
+        if(args->p != 1){  //If uniform sampling is used
+            float random = (float) rand_r(&local_seed) / ((float)INT_MAX+1.0);
+            if (random > args->p){
+                continue;
+            }
 
-        float random = (float) rand_r(&local_seed) / ((float)INT_MAX+1.0);
-        if (random > args->p){
-            continue;
+            args->edges_kept++;  //Count the number of edges considered
         }
-
-        args->edges_kept++;  //Count the number of edges considered
 
         //Each edge is formed by two unsigned integers separated by a space
         sscanf(char_buffer, "%d %d", &node1, &node2);
@@ -103,7 +99,7 @@ void* handle_edges_file(void* args_thread){
             update_top_frequency(&top_freq, node2);
         }
 
-        insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> dpu_input_arguments_ptr, args -> th_id, args -> send_to_dpus_mutex, args -> dpu_set);
+        insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> colors, args -> th_id, args -> send_to_dpus_mutex, args -> dpu_set);
     }
 
     send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpus_mutex, args -> dpu_set);
@@ -136,14 +132,12 @@ void* handle_edges_file(void* args_thread){
     pthread_exit(NULL);
 }
 
-void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, dpu_arguments_t* dpu_input_arguments_ptr, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
+void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, uint32_t colors, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
 
     //Given that the current edge has colors (a,b), with a <= b
-    edge_colors_t current_edge_colors = get_edge_colors(current_edge, dpu_input_arguments_ptr);
+    edge_colors_t current_edge_colors = get_edge_colors(current_edge, colors);
     uint32_t a = current_edge_colors.color_u;
     uint32_t b = current_edge_colors.color_v;
-
-    uint32_t colors = dpu_input_arguments_ptr -> colors;
 
     //Considering the current way triplets are assigned to a DPU, to find the ids of the DPUs that will
     //handle the current edge, it is necessary to consider the cases (a, b, c3), (a, c2, b) and (c1, a, b) (not allowing for duplicates)

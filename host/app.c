@@ -35,6 +35,8 @@ static uint32_t t;  //Max number of top frequent nodes to send to the DPUs
 static uint32_t colors;  //Number of colors to use
 static char* filename;  //Name of the file in Matrix Market format
 
+hash_parameters_t coloring_params;  //Set by the main thread, used by all threads
+
 int main(int argc, char* argv[]){
 
     //Display the usage
@@ -60,42 +62,49 @@ int main(int argc, char* argv[]){
 
         switch (argv[1][1]){
             case 's':
+            case 'S':
                 seed = atoi(argv[2]);
                 argv+=2;
                 argc-=2;
                 break;
 
             case 'M':
+            case 'm':
                 sample_size = atoi(argv[2]);
                 argv+=2;
                 argc-=2;
                 break;
 
             case 'p':
+            case 'P':
                 p = atof(argv[2]);
                 argv+=2;
                 argc-=2;
                 break;
 
             case 'k':
+            case 'K':
                 k = atoi(argv[2]);
                 argv+=2;
                 argc-=2;
                 break;
 
             case 't':
+            case 'T':
                 t = atoi(argv[2]);
                 argv+=2;
                 argc-=2;
                 break;
 
             case 'c':
+            case 'C':
                 colors = atoi(argv[2]);
                 argv+=2;
                 argc-=2;
                 break;
 
             case 'f':
+            case 'F':
                 filename = argv[2];
                 argv+=2;
                 argc-=2;
@@ -195,10 +204,10 @@ int main(int argc, char* argv[]){
     //Limit the size of the batches to fit in memory (occupy a maximum of 90% of free memory)
     uint32_t max_batch_size = (0.9 * get_free_memory() / sizeof(edge_t)) / (NR_THREADS * NR_DPUS);
 
-    //Each DPU will receive at maximum around (6/C^2) * edges_in_graph edges (with colors >= 3).
+    //Each DPU will receive a maximum of around (6/C^2) * (edges_in_graph) edges (with colors >= 3).
     //Edges in graph are multiplied by p to consider only kept edges
     //Added 50% to try sending only a single batch
-    //This number needs to be divided by the number of threads.
+    //This number needs to be divided by the number of threads, because each thread has part of the batch to send a DPU
     uint32_t batch_size_thread = 1.5 * ((6.0 / (colors*colors)) * edges_in_graph * p) / NR_THREADS;
     batch_size_thread = batch_size_thread > max_batch_size ? max_batch_size : batch_size_thread;
 
@@ -209,11 +218,6 @@ int main(int argc, char* argv[]){
         }
     }
 
-    //Determine the parameters used to color the nodes
-    uint32_t hash_parameter_p = 8191;  //Prime number
-    uint32_t hash_parameter_a = rand() % (hash_parameter_p-1) + 1; // a in [1, p-1]
-    uint32_t hash_parameter_b = rand() % hash_parameter_p; // b in [0, p-1]
-
     ////Initializing DPUs
     struct dpu_set_t dpu_set, dpu;
 
@@ -222,8 +226,7 @@ int main(int argc, char* argv[]){
 
     //Sending the input arguments to the DPUs
     dpu_arguments_t input_arguments = {
-        .seed = seed, .sample_size = sample_size, .colors = colors,
-        .hash_parameter_p = hash_parameter_p, .hash_parameter_a = hash_parameter_a, .hash_parameter_b = hash_parameter_b,
+        .seed = seed, .sample_size = sample_size,
         .max_node_id = max_node_id, .t = t
     };
 
@@ -240,8 +243,10 @@ int main(int argc, char* argv[]){
 
     gettimeofday(&start, 0);
 
+    coloring_params = get_hash_parameters();  //Global, shared with other source code file
+
     ////Prepare variables for threads that will create the sample
-    pthread_mutex_t send_to_dpus_mutex;  //Prevent from copying data to the DPUs before the previous batch was processed
+    pthread_mutex_t send_to_dpus_mutex;  //Prevent from copying data to the DPUs before the previous batch has been processed
     if (pthread_mutex_init(&send_to_dpus_mutex, NULL) != 0) {
         printf("Mutex not initialised. Exiting.\n");
         return 1;
@@ -264,7 +269,7 @@ int main(int argc, char* argv[]){
 
     ////Start edge creation
     uint64_t char_per_thread = (file_stat.st_size - ignored_chars)/NR_THREADS;  //Number of chars that each thread will handle
-    for(int th_id = 0; th_id < NR_THREADS; th_id++){
+    for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
 
         //Determine the sections of chars that each thread will consider
         uint64_t from_char_in_file = char_per_thread * th_id + ignored_chars;
@@ -278,9 +283,9 @@ int main(int argc, char* argv[]){
         create_batches_args[th_id] = (create_batches_args_t){
             .th_id = th_id,
             .mmaped_file = mmaped_file, .file_size = file_stat.st_size, .from_char = from_char_in_file, .to_char = to_char_in_file,
-            .seed = seed, .p = p, .edges_kept = 0, .edges_traversed = 0,
+            .seed = seed, .p = p, .edges_kept = 0,
             .k = k, .t = t, .top_freq = top_freq[th_id],
-            .batch_size = batch_size_thread, .dpu_input_arguments_ptr = &input_arguments, .dpu_info_array = dpu_info_array,
+            .batch_size = batch_size_thread, .colors = colors, .dpu_info_array = dpu_info_array,
             .dpu_set = &dpu_set, .send_to_dpus_mutex = &send_to_dpus_mutex,
         };
 
@@ -288,8 +293,8 @@ int main(int argc, char* argv[]){
     }
 
     //Wait for all threads to finish
-    for(uint32_t i = 0; i < NR_THREADS; i++){
-        pthread_join(threads[i], NULL);
+    for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
+        pthread_join(threads[th_id], NULL);
     }
 
     //The threads launched the last batches, need to wait for them to be processed
@@ -345,24 +350,24 @@ int main(int argc, char* argv[]){
 
     uint64_t total_triangle_estimation = 0;
 
-    ////Adjust the result knowing that some triangles may be counted multiple times
+    ////Adjust the result knowing that some triangles may have been counted multiple times
     //First color in the triplet section considered
-    int first_triplet_color = 0;
-    //id of the triplet (and DPU) that counts the triangle whose nodes are colored with the same color
-    uint32_t same_color_triplet_id = 0;
+    int first_color_in_triplet = 0;
+    //id of the  next triplet (and DPU) that counts the triangle whose nodes are colored with the same color
+    uint32_t next_same_color_triplet_id = 0;
 
     for(uint32_t dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
 
         int32_t addition_multiplier = 1;
 
-        if(dpu_id < triplets_created){
+        if(dpu_id < triplets_created){  //It may be possible that there are more DPUs allocated than DPUs actually used
 
-            if(dpu_id == same_color_triplet_id){
+            if(dpu_id == next_same_color_triplet_id){
                 addition_multiplier = 2 - colors;
 
-                //Add binom(C + 1 - first_triplet_color, 2) to the previous id
-                same_color_triplet_id += 0.5 * (colors - first_triplet_color) * (colors - first_triplet_color + 1);
-                first_triplet_color++;
+                //Add binom(C + 1 - first_color_in_triplet, 2) to the previous id to find what is the id of the next DPU that counted triangles with nodes of the same color
+                next_same_color_triplet_id += 0.5 * (colors - first_color_in_triplet) * (colors - first_color_in_triplet + 1);
+                first_color_in_triplet++;
             }
         }
 
@@ -370,13 +375,15 @@ int main(int argc, char* argv[]){
     }
 
     ////Adjust the result due to lost triangles caused by uniform sampling
-    double edges_kept = 0;
-    for(int i = 0; i < NR_THREADS; i++){
-        edges_kept += create_batches_args[i].edges_kept;
-    }
+    if(p != 1){
+        double edges_kept = 0;
+        for(int i = 0; i < NR_THREADS; i++){
+            edges_kept += create_batches_args[i].edges_kept;
+        }
 
-    //It's not used just p to be more precise
-    total_triangle_estimation /= pow((edges_kept/edges_in_graph), 3);
+        //It's not used just p to be more precise
+        total_triangle_estimation /= pow((edges_kept/edges_in_graph), 3);
+    }
 
     //For debug purpose, get standard output from the DPUs
     /*DPU_FOREACH(dpu_set, dpu) {

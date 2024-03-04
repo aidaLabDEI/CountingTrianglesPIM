@@ -27,7 +27,6 @@ typedef struct{
     int32_t seed;
     double p;
     uint32_t edges_kept;
-    uint32_t edges_traversed;
 
     //Misra-Gries
     uint32_t k;
@@ -36,7 +35,7 @@ typedef struct{
 
     ///Create batches
     uint32_t batch_size;
-    dpu_arguments_t* dpu_input_arguments_ptr;
+    uint32_t colors;
     dpu_info_t* dpu_info_array;
 
     //Send the batches
@@ -44,17 +43,14 @@ typedef struct{
     pthread_mutex_t* send_to_dpus_mutex;
 } create_batches_args_t;
 
-//Hash function to get the color of a node
-uint32_t get_node_color(uint32_t node_id, dpu_arguments_t* dpu_input_arguments_ptr);
-
 //Get ordered colors of the edge
-edge_colors_t get_edge_colors(edge_t edge, dpu_arguments_t* dpu_input_arguments_ptr);
+edge_colors_t get_edge_colors(edge_t edge, uint32_t colors);
 
 //Function executed by each thread handling the edges. The file is read and the edges are inserted in the correct batch
 void* handle_edges_file(void* args_thread);
 
 //Insert the current edge into the correct batches considering how triplets are assigned to the DPUs
-void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, dpu_arguments_t* dpu_input_arguments_ptr, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set);
+void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, uint32_t colors, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set);
 
 //Send the full batch to the specific DPU. th_id_to is not included
 void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set);
