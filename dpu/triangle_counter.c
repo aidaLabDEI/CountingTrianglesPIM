@@ -2,6 +2,7 @@
 #include <stdio.h>  //Mainly debug messages
 #include <mram.h>  //Transfer data between WRAM and MRAM. Access MRAM
 #include <mutex.h>  //Mutex for tasklets
+#include <alloc.h>  //Alloc heap in WRAM
 #include <defs.h>
 
 #include "triangle_counter.h"
@@ -19,23 +20,28 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     //Bigger buffer for the edge to consider than the buffers to store traversed edges because traversed edges
     //may be just a few and it would be a waste to load a lot of data that will not be used.
     //Better to read more single edges to consider to enter less frequently in the mutex
-    uint32_t max_nr_edges_read = (WRAM_BUFFER_SIZE - (WRAM_BUFFER_SIZE >> 3)) / sizeof(edge_t) ;
+    uint32_t max_nr_edges_read = (WRAM_BUFFER_SIZE - (WRAM_BUFFER_SIZE >> 2)) / sizeof(edge_t) ;
     edge_t* edges_read_buffer = (edge_t*) wram_buffer_ptr;
     uint32_t edges_to_read = 0;
 
     //Create a buffer in the WRAM of the sample with edges starting with u (1/16) and v (1/16) to speed up research
-    uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE >> 4) / sizeof(edge_t);  //Find 1/8 and divide by 2
+    uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE >> 3) / sizeof(edge_t);  //Find 1/8 and divide by 2
     edge_t* u_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read;
     edge_t* v_sample_buffer_wram = (edge_t*) wram_buffer_ptr + max_nr_edges_read + max_edges_in_wram_cache;
 
-    //If not needed as a the sample buffer, it can be used for other purposes
+    //After decreasing the size of the stack, there is more space for dynamic allocation
     //Given a buffer of size N bytes, the cycles needed without a buffer are log2(N/8) * (77 + 0.5 * 8), with a buffer (77 + 0.5 * N)
     //A buffer gives better results with N between 24 and 960
-    uint32_t max_node_loc_in_wram_cache = (WRAM_BUFFER_SIZE >> 3) / sizeof(node_loc_t);
-    node_loc_t* bin_search_buffer = (node_loc_t*)wram_buffer_ptr + max_nr_edges_read;
+    uint32_t max_node_loc_in_wram_cache = 768 / sizeof(node_loc_t);
+    node_loc_t* bin_search_buffer = mem_alloc(max_node_loc_in_wram_cache * sizeof(node_loc_t));
+    uint32_t node_loc_in_wram_cache = 0;  //How many locations are actually loaded in the cache
 
     uint32_t local_sample_read_offset;
     uint32_t edges_read_buffer_offset = max_nr_edges_read;
+
+    //Keep track of the index where the buffer is taken from
+    uint32_t where_u_sample_buffer = 0;
+    uint32_t where_v_sample_buffer = 0;
 
     while(edges_read_buffer_offset < edges_to_read || global_sample_read_offset < edges_in_sample){
 
@@ -71,7 +77,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
         uint32_t v = current_edge.v;
 
         //No need to find the u_info because the starting location is given by the address of the current edge
-        node_loc_t v_info = get_location_info(num_locations, v, AFTER_SAMPLE_HEAP_POINTER, bin_search_buffer, max_node_loc_in_wram_cache);
+        node_loc_t v_info = get_location_info(num_locations, v, AFTER_SAMPLE_HEAP_POINTER, bin_search_buffer, max_node_loc_in_wram_cache, &node_loc_in_wram_cache);
 
         if(v_info.index_in_sample == -1){  //There is no other edge with v as first node
             continue;
@@ -86,25 +92,43 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
         uint32_t u_neighbor_id;
         uint32_t v_neighbor_id;
 
+        uint32_t u_sample_buffer_index = 0;
         uint32_t v_sample_buffer_index = 0;
-        mram_read(&sample[v_index], v_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
 
-        //Use the edges that are already present in the WRAM at first
-        uint32_t u_edges_to_copy;
-        uint32_t u_sample_buffer_index;
-
-        //If in the edges buffer there are more edges than there can be in the u_buffer, copy everything that fits
-        if(edges_to_read - (edges_read_buffer_offset-1) > max_edges_in_wram_cache){
-            u_edges_to_copy = max_edges_in_wram_cache;
-            u_sample_buffer_index = 0;
+        //Use the u edges that are already present in the buffer (wait for first load by looking at v)
+        if(where_v_sample_buffer != 0 && u_index >= where_u_sample_buffer && u_index < where_u_sample_buffer+max_edges_in_wram_cache){
+            u_sample_buffer_index = u_index-where_u_sample_buffer;
         }else{
-            //Copy only the last edges in the buffer
-            u_edges_to_copy = edges_to_read - (edges_read_buffer_offset-1);
-            u_sample_buffer_index = max_edges_in_wram_cache - u_edges_to_copy;
+
+            //Use the edges that are already present in the WRAM
+            uint32_t u_edges_to_copy;
+
+            //If in the edges buffer there are more edges than there can be in the u_buffer, copy everything that fits
+            if(edges_to_read - (edges_read_buffer_offset-1) > max_edges_in_wram_cache){
+                u_edges_to_copy = max_edges_in_wram_cache;
+                u_sample_buffer_index = 0;
+                where_u_sample_buffer = u_index;
+            }else{
+                //Copy only the last edges in the buffer
+                u_edges_to_copy = edges_to_read - (edges_read_buffer_offset-1);
+                u_sample_buffer_index = max_edges_in_wram_cache - u_edges_to_copy;
+
+                //Make it seems like all the buffer was filled with important data, even though only the last part is
+                //It works because the useless data will not be used anymore
+                where_u_sample_buffer = u_index-u_sample_buffer_index;
+            }
+
+            for(uint32_t i = 0; i < u_edges_to_copy; i++){
+                u_sample_buffer_wram[u_sample_buffer_index + i] = edges_read_buffer[edges_read_buffer_offset - 1 + i];
+            }
         }
 
-        for(uint32_t i = 0; i < u_edges_to_copy; i++){
-            u_sample_buffer_wram[u_sample_buffer_index + i] = edges_read_buffer[edges_read_buffer_offset - 1 + i];
+        //If the data loaded in v is still usable (wait for first load)
+        if(where_v_sample_buffer != 0 && v_index >= where_v_sample_buffer && v_index < where_v_sample_buffer+max_edges_in_wram_cache){
+            v_sample_buffer_index = v_index-where_v_sample_buffer;
+        }else{
+            mram_read(&sample[v_index], v_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
+            where_v_sample_buffer = v_index;
         }
 
         while(u_sample_buffer_wram[u_sample_buffer_index].u == u && v_sample_buffer_wram[v_sample_buffer_index].u == v){
@@ -143,12 +167,14 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
             //Retrieve new edges starting with u
             if(u_sample_buffer_index == max_edges_in_wram_cache){
                 mram_read(&sample[u_index + u_offset], u_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
+                where_u_sample_buffer = u_index + u_offset;
                 u_sample_buffer_index = 0;
             }
 
             //Retrieve new edges starting with v
             if(v_sample_buffer_index == max_edges_in_wram_cache){
                 mram_read(&sample[v_index + v_offset], v_sample_buffer_wram, max_edges_in_wram_cache * sizeof(edge_t));
+                where_v_sample_buffer = v_index + v_offset;
                 v_sample_buffer_index = 0;
             }
         }
@@ -158,9 +184,14 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
 }
 
 //Not much benefit transferring much more data to the WRAM than the one that is necessary
-node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, node_loc_t* node_loc_buffer_ptr, uint32_t max_node_loc_in_buffer){
+node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, node_loc_t* node_loc_buffer_ptr, uint32_t max_node_loc_in_buffer, uint32_t* node_loc_in_wram_cache){
 
     int low = 0, high = unique_nodes - 1;
+
+    //Use directly the WRAM buffer if the data is already loaded
+    if(*node_loc_in_wram_cache != 0 && node_loc_buffer_ptr[0].id <= node_id && node_loc_buffer_ptr[*node_loc_in_wram_cache-1].id >= node_id){
+        return get_location_info_WRAM(node_id, node_loc_buffer_ptr, *node_loc_in_wram_cache);
+    }
 
     while (low <= high) {
 
@@ -182,12 +213,12 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
             }
         }else{
             //Do not load more elements than necessary
-            uint32_t node_loc_to_load = (high - low + 1);
+            *node_loc_in_wram_cache = (high - low + 1);
 
             //Search in the remaining elements
-            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + low * sizeof(node_loc_t)), node_loc_buffer_ptr, node_loc_to_load * sizeof(node_loc_t));  //Read the current node data from the MRAM
+            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + low * sizeof(node_loc_t)), node_loc_buffer_ptr, (*node_loc_in_wram_cache) * sizeof(node_loc_t));  //Read the current node data from the MRAM
 
-            return get_location_info_WRAM(node_id, node_loc_buffer_ptr, node_loc_to_load);
+            return get_location_info_WRAM(node_id, node_loc_buffer_ptr, *node_loc_in_wram_cache);
         }
     }
     //Dummy node informations when the node is not present. The only thing that makes this not valid is the number of neighbors at 0
