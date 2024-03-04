@@ -49,6 +49,15 @@ uint64_t get_free_memory(){
     return ramKB * 1024;  //Return number of bytes
 }
 
+hash_parameters_t get_hash_parameters(){
+    //Determine the parameters used to color the nodes
+    uint32_t p = 8191;  //Prime number
+    uint32_t a = rand() % (p-1) + 1; // a in [1, p-1]
+    uint32_t b = rand() % p; // b in [0, p-1]
+
+    return (hash_parameters_t){p, a, b};
+}
+
 uint32_t global_top_freq(node_frequency_t** top_freq_th, node_frequency_t* result_top_f, uint32_t t){
 
     //Can hold all the top frequencies from the threads

@@ -14,6 +14,12 @@ for every edge 16 bytes are occupied, there can be 63MB/16B = 4128768 edges
 #define MAX_SAMPLE_SIZE 4128768
 #endif
 
+typedef struct{
+    uint32_t p;
+    uint32_t a;
+    uint32_t b;
+} hash_parameters_t;
+
 //Print how the program should be executed (arguments)
 void usage();
 
@@ -22,6 +28,9 @@ float timedifference_msec(struct timeval t0, struct timeval t1);
 
 //Get the number of free bytes in memory
 uint64_t get_free_memory();
+
+//Get the parameters for the coloring hash function
+hash_parameters_t get_hash_parameters();
 
 //Find t most frequent nodes starting from the data from the threads
 uint32_t global_top_freq(node_frequency_t** top_freq_th, node_frequency_t* result_top_f, uint32_t t);
