@@ -24,13 +24,13 @@ __host dpu_arguments_t DPU_INPUT_ARGUMENTS;
 __host uint64_t start_counting = 0;
 
 //Variable that will be read by the host at the end
-__host uint64_t triangle_estimation;  //Necessary to have a variable of 8 bytes for transferring to host
+__host uint64_t triangle_estimation;
 
 //Current count of edges in the sample (limited by sample size)
 uint32_t edges_in_sample = 0;
 
 //At first, the batch is at the start of the heap, and the sample at the bottom
-//The batch is overwritten and the sample is moved in the sorting phase
+//The last batch is overwritten and the sample is moved in the sorting phase
 __mram_ptr edge_t* batch = DPU_MRAM_HEAP_POINTER;  //Max size for batch is 32MB
 __host uint64_t edges_in_batch;
 
@@ -39,16 +39,14 @@ __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;
 
 //Transfer the data first to the MRAM, and then to the WRAM.
 //This to allow the WRAM buffer to be allocated dynamically
-__mram_ptr node_frequency_t* top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;  //It does not interfere with the batch
+__mram_ptr node_frequency_t* top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;  //No interference with other elements in MRAM
 node_frequency_t* top_frequent_nodes;
 __host uint64_t nr_top_nodes;
 
 //The setup happens only once
 bool is_setup_done = false;
 
-//Number of edges handled by this DPU.
-//Edges inside the DPU, removed in the past or not considered by chance.
-//The edges not handled because of the triplets are not counted
+//Number of edges assigned to this DPU.
 uint32_t total_edges = 0;
 
 //Save the pointers for the WRAM buffers for each tasklet to make the buffers persistent through different executions
@@ -71,7 +69,7 @@ MUTEX_INIT(insert_into_sample);  //Virtual insertion. Increase counter, but inse
 
 //It is not possible to use edges_in_sample to know where to save. This variable keeps track of the first
 //free index in the sample where it is possible to save data from the WRAM buffers
-uint32_t index_to_save_sample = 0;
+uint32_t global_index_to_save_sample = 0;
 MUTEX_INIT(transfer_to_sample);  //Real transfer to the sample in the MRAM
 MUTEX_INIT(replace_in_sample);
 
@@ -107,31 +105,31 @@ int main() {
 
         //Range handled by a tasklet
         uint32_t handled_edges = (uint32_t)edges_in_batch/NR_TASKLETS;
-        uint32_t edge_count_batch_local = handled_edges * me();  //The first edge handled by a tasklet
-        uint32_t edge_count_batch_to = (me() == NR_TASKLETS-1) ? edges_in_batch : handled_edges * (me()+1);
+        uint32_t batch_index_local = handled_edges * me();  //The first edge handled by a tasklet
+        uint32_t batch_index_to = (me() == NR_TASKLETS-1) ? edges_in_batch : handled_edges * (me()+1);
 
-        edge_t* batch_buffer_wram = (edge_t*) wram_buffer_ptr;
-        uint32_t edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t));
+        edge_t* batch_buffer = (edge_t*) wram_buffer_ptr;
+        uint32_t max_edges_in_batch_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t));
 
-        uint32_t batch_buffer_index = edges_in_wram_cache;  //Allows for data to be transfered the first iteration
+        uint32_t batch_buffer_index = max_edges_in_batch_buffer;  //Allows for data to be transfered the first iteration
 
         //This is used to indicate to the single tasklet where to save its buffer in the sample, without requiring to have the transfer inside the mutex
-        //It is determined considering the global variable index_to_save_sample
+        //It is determined considering the global variable global_index_to_save_sample
         uint32_t local_index_to_save_sample = 0;
 
-        while(edge_count_batch_local < edge_count_batch_to){  //Until the end of the section of the batch is reached
+        while(batch_index_local < batch_index_to){  //Until the end of the section of the batch is reached
 
             //Transfer some edges of the batch to the WRAM
             uint32_t edges_in_batch_buffer = 0;
-            if(batch_buffer_index == edges_in_wram_cache){
+            if(batch_buffer_index == max_edges_in_batch_buffer){
                 //It is necessary to read only the edges assigned to the tasklet.
-                if((edge_count_batch_to - edge_count_batch_local) >= edges_in_wram_cache){
-                    edges_in_batch_buffer = edges_in_wram_cache;
+                if((batch_index_to - batch_index_local) >= max_edges_in_batch_buffer){
+                    edges_in_batch_buffer = max_edges_in_batch_buffer;
                 }else{
-                    edges_in_batch_buffer = edge_count_batch_to - edge_count_batch_local;
+                    edges_in_batch_buffer = batch_index_to - batch_index_local;
                 }
 
-                mram_read(&batch[edge_count_batch_local], batch_buffer_wram, edges_in_batch_buffer * sizeof(edge_t));
+                mram_read(&batch[batch_index_local], batch_buffer, edges_in_batch_buffer * sizeof(edge_t));
 
                 batch_buffer_index = 0;
             }
@@ -152,16 +150,16 @@ int main() {
                     edges_in_sample += edges_to_copy;
                     total_edges += edges_to_copy;
 
-                    local_index_to_save_sample = index_to_save_sample;
-                    index_to_save_sample += edges_to_copy;
+                    local_index_to_save_sample = global_index_to_save_sample;
+                    global_index_to_save_sample += edges_to_copy;
 
                     mutex_unlock(insert_into_sample);
 
-                    mram_write(batch_buffer_wram, &sample[local_index_to_save_sample], edges_to_copy * sizeof(edge_t));
+                    mram_write(batch_buffer, &sample[local_index_to_save_sample], edges_to_copy * sizeof(edge_t));
 
                     if(edges_to_copy == edges_in_batch_buffer){  //All edges are already transfered. Get new edges
-                        batch_buffer_index = edges_in_wram_cache;
-                        edge_count_batch_local += edges_in_wram_cache;
+                        batch_buffer_index = max_edges_in_batch_buffer;
+                        batch_index_local += max_edges_in_batch_buffer;
                         continue;
                     }
 
@@ -179,10 +177,10 @@ int main() {
 
             ////There are still some edges to consider, and the sample is full. So edge replacement is necessary////
 
-            edge_t current_edge = batch_buffer_wram[batch_buffer_index];
+            edge_t current_edge = batch_buffer[batch_buffer_index];
             batch_buffer_index++;
 
-            edge_count_batch_local++;
+            batch_index_local++;
 
             mutex_lock(replace_in_sample);
             total_edges++;
@@ -192,7 +190,7 @@ int main() {
             float u_rand = (float)rand() / ((float)UINT_MAX+1.0);  //UINT_MAX is the maximum value that can be returned by rand()
     		float thres = ((float)DPU_INPUT_ARGUMENTS.sample_size)/total_edges;
 
-            //Randomly decide if replace or not an edge in the sample
+            //Randomly decide if to replace or not an edge in the sample
             if (u_rand < thres){
                 uint32_t random_index = rand_range(0, DPU_INPUT_ARGUMENTS.sample_size-1);
                 //Tasklet-safe
@@ -211,6 +209,7 @@ int main() {
         //If Misra-Gries is used
         if(DPU_INPUT_ARGUMENTS.t != 0){
 
+            //Split the workload equally among the tasklets
             uint32_t edges_per_tasklet = edges_in_sample/NR_TASKLETS;
             uint32_t from_edge = edges_per_tasklet * tasklet_id;
             uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);

@@ -21,47 +21,47 @@ uint32_t rand_range(uint32_t from, uint32_t to){
     return (rand() % (to - from + 1) + from);
 }
 
-void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* wram_edges_buffer, uint32_t nr_top_nodes, node_frequency_t* top_frequent_nodes, uint32_t max_node_id){
+void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* sample_buffer, uint32_t nr_top_nodes, node_frequency_t* top_frequent_nodes, uint32_t max_node_id){
 
-    uint32_t max_nr_edges_read = WRAM_BUFFER_SIZE/sizeof(edge_t);
-    uint32_t edges_to_read = 0;
+    uint32_t max_edges_in_sample_buffer = WRAM_BUFFER_SIZE/sizeof(edge_t);
+    uint32_t edges_in_sample_buffer = 0;
 
     while(from_edge < to_edge){
 
-        if(to_edge - from_edge >= max_nr_edges_read){
-            edges_to_read = max_nr_edges_read;
+        if(to_edge - from_edge >= max_edges_in_sample_buffer){
+            edges_in_sample_buffer = max_edges_in_sample_buffer;
         }else{
-            edges_to_read = to_edge - from_edge;
+            edges_in_sample_buffer = to_edge - from_edge;
         }
 
-        //In case the the number of edges to handle is a multiple of max_nr_edges_read
-        if(edges_to_read == 0){
+        //In case the the number of edges to handle is a multiple of max_edges_in_sample_buffer
+        if(edges_in_sample_buffer == 0){
             break;
         }
 
-        mram_read(&sample[from_edge], wram_edges_buffer, edges_to_read * sizeof(edge_t));
+        mram_read(&sample[from_edge], sample_buffer, edges_in_sample_buffer * sizeof(edge_t));
 
-        for(uint32_t i = 0; i < edges_to_read; i++){
+        for(uint32_t i = 0; i < edges_in_sample_buffer; i++){
 
             //Replace the most frequent nodes to make their node ids the highest
             for(uint32_t k = 0; k < nr_top_nodes; k++){
 
-                if(wram_edges_buffer[i].u == top_frequent_nodes[k].node_id){
-                    wram_edges_buffer[i].u = max_node_id + nr_top_nodes - k;
+                if(sample_buffer[i].u == top_frequent_nodes[k].node_id){
+                    sample_buffer[i].u = max_node_id + nr_top_nodes - k;
                 }
 
-                if(wram_edges_buffer[i].v == top_frequent_nodes[k].node_id){
-                    wram_edges_buffer[i].v = max_node_id + nr_top_nodes - k;
+                if(sample_buffer[i].v == top_frequent_nodes[k].node_id){
+                    sample_buffer[i].v = max_node_id + nr_top_nodes - k;
                 }
             }
 
             //Invert the nodes to make them ordered
-            if(wram_edges_buffer[i].u > wram_edges_buffer[i].v){
-                wram_edges_buffer[i] = (edge_t){wram_edges_buffer[i].v, wram_edges_buffer[i].u};
+            if(sample_buffer[i].u > sample_buffer[i].v){
+                sample_buffer[i] = (edge_t){sample_buffer[i].v, sample_buffer[i].u};
             }
         }
-        mram_write(wram_edges_buffer, &sample[from_edge], edges_to_read * sizeof(edge_t));
-        from_edge += edges_to_read;
+        mram_write(sample_buffer, &sample[from_edge], edges_in_sample_buffer * sizeof(edge_t));
+        from_edge += edges_in_sample_buffer;
     }
 }
 
