@@ -17,7 +17,7 @@ uint32_t rand();
 uint32_t rand_range(uint32_t from, uint32_t to);  //from and to are included
 
 //Maps the most frequent nodes to new values to reduce the number of comparisons for high degree nodes
-void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* wram_edges_buffer, uint32_t nr_top_nodes, node_frequency_t* top_frequent_nodes, uint32_t max_node_id);
+void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* sample_buffer, uint32_t nr_top_nodes, node_frequency_t* top_frequent_nodes, uint32_t max_node_id);
 
 //Debug function for printing the content of the sample
 void print_sample(__mram_ptr edge_t* sample, uint32_t edges_in_sample);

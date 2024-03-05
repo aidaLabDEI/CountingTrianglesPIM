@@ -19,18 +19,18 @@ uint32_t remaining_tasklets = NR_TASKLETS;
 
 uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr){
     //Create a buffer in the WRAM of the sample to speed up research
-    uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;  //Divide by 2 with right shift
+    uint32_t max_edges_in_sample_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;  //Divide by 2 with right shift
     //Use half the WRAM buffer for buffering the sample
-    edge_t* sample_buffer_wram = (edge_t*) wram_buffer_ptr;
+    edge_t* sample_buffer = (edge_t*) wram_buffer_ptr;
 
     //Use the other half of the WRAM buffer to store node locations that will be transferred to the MRAM
     //Because the size of an edge variable is the same as the size of a node location variable,
     //There is no need to check if there is enough space for more node locations (written when new edges are read)
-    node_loc_t* nodes_loc_buffer_wram = wram_buffer_ptr + max_edges_in_wram_cache * sizeof(edge_t);
+    node_loc_t* nodes_loc_buffer = wram_buffer_ptr + max_edges_in_sample_buffer * sizeof(edge_t);
 
     //Indexes to traverse the WRAM buffers
     uint32_t nodes_loc_buffer_index = 0;
-    uint32_t sample_buffer_index = max_edges_in_wram_cache;  //At max at first to have a read at first
+    uint32_t sample_buffer_index = max_edges_in_sample_buffer;  //At max at first to have a read at first
 
     uint32_t previous_node_id;
 
@@ -48,7 +48,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     //Read until there are edges in the local buffer or there are edges in the sample
     while(true){
 
-        if(sample_buffer_index == max_edges_in_wram_cache){
+        if(sample_buffer_index == max_edges_in_sample_buffer){
 
             //The tasklets read the sample in order, after the previous one has read its section
             //The first tasklets starts, then all the other can proceed in order
@@ -64,7 +64,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
 
             /*WRITE TO THE MRAM*/
             if(!is_first_read){  //Nothing to write at first
-                write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER);
+                write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer, AFTER_SAMPLE_HEAP_POINTER);
             }
 
             //Making the tasklet write outside of the handshake lock is painfully difficult
@@ -77,7 +77,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
                 sample_buffer_index = 0;
 
                 if(NR_TASKLETS > 1){
-                        handshake_notify();
+                    handshake_notify();
                 }
                 is_first_read = false;
 
@@ -89,11 +89,11 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
                     previous_node_id = previous_edge.u;
                 } //If local_read_offset == 0, the previous_node_id will not be considered
 
-                mram_read(&sample[local_read_offset], sample_buffer_wram, edges_read * sizeof(edge_t));
+                mram_read(&sample[local_read_offset], sample_buffer, edges_read * sizeof(edge_t));
 
             }else{
                 if(NR_TASKLETS > 1){
-                        handshake_notify();
+                    handshake_notify();
                 }
                 break;
             }
@@ -106,7 +106,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
             //Skip all edges already considered in a previous node location
             //Skip until there are edges to consider and, if there is a previous node id, the current node id is the same
             for(; sample_buffer_index < edges_read; sample_buffer_index++){
-                current_node_id = sample_buffer_wram[sample_buffer_index].u;
+                current_node_id = sample_buffer[sample_buffer_index].u;
 
                 //If it is the first edge or if it is a new node, it must be considered
                 if(local_read_offset == 0 || current_node_id != previous_node_id){
@@ -126,13 +126,13 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
             //Count the number of nodes that have the current_node as value u in the edge
             //The result is the number of neighbors of that node
             //This is possible because the sample is ordered, there are no duplicates and u<v in each edge
-            while(sample_buffer_index < edges_read && sample_buffer_wram[sample_buffer_index].u == current_node_id){
+            while(sample_buffer_index < edges_read && sample_buffer[sample_buffer_index].u == current_node_id){
                 sample_buffer_index++;
             }
 
             //Transfer the data to the MRAM
             node_loc_t current_node_info = (node_loc_t) {current_node_id, index_in_sample};
-            nodes_loc_buffer_wram[nodes_loc_buffer_index] = current_node_info;
+            nodes_loc_buffer[nodes_loc_buffer_index] = current_node_info;
             nodes_loc_buffer_index++;
 
             //There will be no need to transfer node locations while considering the current edge buffer
@@ -151,7 +151,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     }
 
     //Write the last node locations
-    write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer_wram, AFTER_SAMPLE_HEAP_POINTER);
+    write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer, AFTER_SAMPLE_HEAP_POINTER);
     remaining_tasklets--;
 
     if(NR_TASKLETS > 1 && remaining_tasklets > 0){
@@ -161,14 +161,14 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     return local_unique_nodes;
 }
 
-void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer_wram, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER){
+void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER){
 
     //Copy back the node locations (if any). The handshake grants the correct order
     if(*nodes_loc_buffer_index > 0){
         uint32_t local_write_offset = global_write_offset;
         global_write_offset += *nodes_loc_buffer_index;
 
-        mram_write(nodes_loc_buffer_wram, (__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + local_write_offset), (*nodes_loc_buffer_index) * sizeof(node_loc_t));
+        mram_write(nodes_loc_buffer, (__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + local_write_offset), (*nodes_loc_buffer_index) * sizeof(node_loc_t));
         *nodes_loc_buffer_index = 0;
     }
 }
@@ -176,10 +176,10 @@ void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buf
 uint32_t virtually_read_from_sample(uint32_t edges_in_sample, uint32_t* edges_read){
 
     //Read more edges
-    uint32_t max_edges_in_wram_cache = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;
+    uint32_t max_edges_in_sample_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;
 
-    if(edges_in_sample - global_read_offset >= max_edges_in_wram_cache){
-        *edges_read = max_edges_in_wram_cache;
+    if(edges_in_sample - global_read_offset >= max_edges_in_sample_buffer){
+        *edges_read = max_edges_in_sample_buffer;
     }else{
         *edges_read = edges_in_sample - global_read_offset;
     }
