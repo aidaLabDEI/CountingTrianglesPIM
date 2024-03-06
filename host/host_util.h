@@ -14,6 +14,10 @@ for every edge 16 bytes are occupied, there can be 63MB/16B = 4128768 edges
 #define MAX_SAMPLE_SIZE 4128768
 #endif
 
+#ifndef DPU_BINARY
+#define DPU_BINARY "./task"
+#endif
+
 typedef struct{
     uint32_t p;
     uint32_t a;
@@ -22,6 +26,9 @@ typedef struct{
 
 //Print how the program should be executed (arguments)
 void usage();
+
+//Allocate the DPUs and load the kernel
+void* allocate_dpus(void* dpu_set);
 
 //Get time difference between two moments to calculate execution time
 float timedifference_msec(struct timeval t0, struct timeval t1);

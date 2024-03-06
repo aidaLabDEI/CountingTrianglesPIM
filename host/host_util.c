@@ -2,6 +2,9 @@
 #include <stdio.h>  //Print
 #include <sys/time.h>  //Measure execution time
 #include <stdlib.h>  //Exit
+#include <assert.h>  //Assert
+#include <dpu.h>  //Create dpu set
+#include <pthread.h>
 
 #include "mg_hashtable.h"
 #include "host_util.h"
@@ -20,6 +23,17 @@ void usage(){
     printf(" -c #          [Use # colors to color the nodes of the graph. Required]\n");
     printf(" -f <filename> [Input Graph in Matrix Market format. Required]\n");
     exit(1);
+}
+
+void* allocate_dpus(void* dpu_set){
+    DPU_ASSERT(dpu_alloc(NR_DPUS, NULL, (struct dpu_set_t*) dpu_set));
+    DPU_ASSERT(dpu_load(*(struct dpu_set_t*) dpu_set, DPU_BINARY, NULL));
+
+    if(NR_THREADS > 1){  //If it's possible to use multiple threads, antoher thread does the allocation
+        pthread_exit(NULL);
+    }else{
+        return NULL;
+    }
 }
 
 float timedifference_msec(struct timeval t0, struct timeval t1){
