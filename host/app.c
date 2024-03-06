@@ -227,7 +227,7 @@ int main(int argc, char* argv[]){
 
     ////Initializing DPUs
     if(NR_THREADS > 1){
-        //If multiple threads were used, wait for the DPU allocation to finish
+        //If multiple threads were used, wait for the DPUs allocation to finish
         pthread_join(dpu_allocation_thread, NULL);
     }
 
@@ -240,7 +240,7 @@ int main(int argc, char* argv[]){
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "DPU_INPUT_ARGUMENTS", 0, &input_arguments, sizeof(dpu_arguments_t), DPU_XFER_DEFAULT));
 
     //Launch DPUs for setup
-    DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
+    DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
 
     struct timeval now;
     gettimeofday(&now, 0);
