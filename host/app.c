@@ -23,10 +23,6 @@
 #include "handle_edges_parallel.h"
 #include "mg_hashtable.h"
 
-#ifndef DPU_BINARY
-#define DPU_BINARY "./task"
-#endif
-
 static int32_t seed;  //Seed for random numbers
 static uint32_t sample_size;  //Sample size in DPUs
 static float p;  //Probability of ignoring edges
@@ -160,6 +156,17 @@ int main(int argc, char* argv[]){
     struct timeval start;
     gettimeofday(&start, 0);
 
+    ////Allocate DPUs
+    struct dpu_set_t dpu_set, dpu;
+
+    //If it's possible to use multiple threads, allocate the DPUs in parallel. Otherwise, the main thread does it
+    pthread_t dpu_allocation_thread;
+    if(NR_THREADS > 1){
+        pthread_create(&dpu_allocation_thread, NULL, allocate_dpus, (void*) &dpu_set);
+    }else{
+        allocate_dpus((void*) &dpu_set);
+    }
+
     ////Load the file into memory. Faster access from threads when reading edges
     struct stat file_stat;
     stat(filename, &file_stat);
@@ -219,10 +226,10 @@ int main(int argc, char* argv[]){
     }
 
     ////Initializing DPUs
-    struct dpu_set_t dpu_set, dpu;
-
-    DPU_ASSERT(dpu_alloc(NR_DPUS, NULL, &dpu_set));
-    DPU_ASSERT(dpu_load(dpu_set, DPU_BINARY, NULL));
+    if(NR_THREADS > 1){
+        //If multiple threads were used, wait for the DPU allocation to finish
+        pthread_join(dpu_allocation_thread, NULL);
+    }
 
     //Sending the input arguments to the DPUs
     dpu_arguments_t input_arguments = {
