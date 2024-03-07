@@ -75,7 +75,7 @@ void* handle_edges_file(void* args_thread){
         }
         char_buffer[c] = 0; //Without this, some remains of previous edges may be considered
 
-        if(args->p != 1){  //If uniform sampling is used
+        if(fabs(args->p - 1.0) > EPSILON){  //p != 1  //If uniform sampling is used
             float random = (float) rand_r(&local_seed) / ((float)INT_MAX+1.0);
             if (random > args->p){
                 continue;

@@ -382,7 +382,7 @@ int main(int argc, char* argv[]){
     }
 
     ////Adjust the result due to lost triangles caused by uniform sampling
-    if(p != 1){
+    if(fabs(p - 1.0) > EPSILON){  //p != 1
         double edges_kept = 0;
         for(int i = 0; i < NR_THREADS; i++){
             edges_kept += create_batches_args[i].edges_kept;

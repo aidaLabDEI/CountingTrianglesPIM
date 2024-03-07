@@ -266,7 +266,6 @@ int main() {
             if(edges_in_sample < total_edges){
                 //Normalization of the result considering the substituted edges may have removed triangles
                 double p = ((float)DPU_INPUT_ARGUMENTS.sample_size/total_edges)*((float)(DPU_INPUT_ARGUMENTS.sample_size-1)/(total_edges-1))*((float)(DPU_INPUT_ARGUMENTS.sample_size-2)/(total_edges-2));
-                p = p < 1.0 ? p : 1.0;
 
                 //The first tasklet message will contain the number of triangles counted by the tasklets
                 triangle_estimation = (uint64_t) messages[0]/p;

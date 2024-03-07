@@ -18,6 +18,9 @@ for every edge 16 bytes are occupied, there can be 63MB/16B = 4128768 edges
 #define DPU_BINARY "./task"
 #endif
 
+//For double comparisons
+#define EPSILON 0.000001
+
 typedef struct{
     uint32_t p;
     uint32_t a;
