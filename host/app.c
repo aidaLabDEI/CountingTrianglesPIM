@@ -159,7 +159,7 @@ int main(int argc, char* argv[]){
     ////Allocate DPUs
     struct dpu_set_t dpu_set, dpu;
 
-    //If it's possible to use multiple threads, allocate the DPUs in parallel. Otherwise, the main thread does it
+    //If it's possible to use multiple threads, allocate the DPUs using another thread. Otherwise, the main thread does it
     pthread_t dpu_allocation_thread;
     if(NR_THREADS > 1){
         pthread_create(&dpu_allocation_thread, NULL, allocate_dpus, (void*) &dpu_set);
@@ -205,7 +205,7 @@ int main(int argc, char* argv[]){
 
     ////Allocate the memory used to store the batches to send to the DPUs
 
-    //Each thread has its own data, so no mutexes are needed while inserting
+    //Each thread has its own data, so no mutexes are needed while inserting edges into batches
     dpu_info_t* dpu_info_array = malloc(sizeof(dpu_info_t) * NR_THREADS * NR_DPUS);
 
     //Limit the size of the batches to fit in memory (occupy a maximum of 90% of free memory)
