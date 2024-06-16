@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-//Struct used to transfer starting data from the host to the dpus. Aligned to 8 bytes
+//Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
 typedef struct {
     uint32_t seed;
 
@@ -25,6 +25,7 @@ typedef struct {
     uint32_t color_v;
 } edge_colors_t;
 
+//Used to store information about nodes while using Misra-Gries
 typedef struct{
     uint32_t node_id;
     int32_t frequency;
