@@ -7,11 +7,11 @@
 #include "../common/common.h"
 
 /*Wort case, for each edge there is a new unique node.
-considering 63MB free in the MRAM for the sample, considering that
-for every edge 16 bytes are occupied, there can be 63MB/16B = 4128768 edges
+considering 63.5MB free in the MRAM for the sample, considering that
+for every edge 16 bytes are occupied, there can be 63.5MB/16B = 4161536 edges
 */
 #ifndef MAX_SAMPLE_SIZE
-#define MAX_SAMPLE_SIZE 4128768
+#define MAX_SAMPLE_SIZE 4161536
 #endif
 
 #ifndef DPU_BINARY
