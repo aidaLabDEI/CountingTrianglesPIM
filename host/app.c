@@ -29,7 +29,7 @@ static float p;  //Probability of ignoring edges
 static uint32_t k;  //Size of Misra-Gries dictionary for each thread
 static uint32_t t;  //Max number of top frequent nodes to send to the DPUs
 static uint32_t colors;  //Number of colors to use
-static char* filename;  //Name of the file in Matrix Market format
+static char* filename;  //Name of the file in COO format
 
 hash_parameters_t coloring_params;  //Set by the main thread, used by all threads
 
@@ -219,7 +219,7 @@ int main(int argc, char* argv[]){
     coloring_params = get_hash_parameters();  //Global, shared with other source code file
 
     ////Prepare variables for threads that will create the sample
-    pthread_mutex_t send_to_dpus_mutex;  //Prevent from copying data to the DPUs before the previous batch has been processed
+    pthread_mutex_t send_to_dpus_mutex;  //Mutex used to prevent from copying data to the DPUs before the previous batch has been processed
     if (pthread_mutex_init(&send_to_dpus_mutex, NULL) != 0) {
         printf("Mutex not initialised. Exiting.\n");
         return 1;
@@ -270,7 +270,7 @@ int main(int argc, char* argv[]){
         pthread_join(threads[th_id], NULL);
     }
 
-    //The threads launched the last batches, need to wait for them to be processed
+    //The threads sent the last batches, need to wait for them to be processed
     DPU_ASSERT(dpu_sync(dpu_set));
 
     if(k > 0){
@@ -303,7 +303,7 @@ int main(int argc, char* argv[]){
     }
     free(dpu_info_array);
     pthread_mutex_destroy(&send_to_dpus_mutex);
-    munmap(mmaped_file, file_stat.st_size);  //Free mmapped memory
+    munmap(mmaped_file, file_stat.st_size);  //Free mmapped memory (graph file)
 
     if(k > 0){
         for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
@@ -331,7 +331,7 @@ int main(int argc, char* argv[]){
     ////Adjust the result knowing that some triangles may have been counted multiple times
     //First color in the triplet section considered
     int first_color_in_triplet = 0;
-    //id of the  next triplet (and DPU) that counts the triangle whose nodes are colored with the same color
+    //id of the  next triplet (and DPU) that counts the triangle whose nodes are all colored with the same color
     uint32_t next_same_color_triplet_id = 0;
 
     for(uint32_t dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
@@ -359,7 +359,7 @@ int main(int argc, char* argv[]){
             edges_kept += create_batches_args[i].edges_kept;
         }
 
-        //It's not used just p to be more precise
+        //Not using p directly to be more precise
         total_triangle_estimation /= pow((edges_kept/edges_in_graph), 3);
     }
 
