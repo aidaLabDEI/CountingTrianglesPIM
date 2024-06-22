@@ -16,21 +16,19 @@ MUTEX_INIT(read_from_sample);
 uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr){
     uint32_t triangle_count = 0;
 
-    //Create a buffer in the WRAM to read more than one edge from the sample (7/8 of the total space)
-    //Bigger buffer for the edge to consider than the buffers to store traversed edges because traversed edges
-    //may be just a few and it would be a waste to load a lot of data that will not be used.
-    //Better to read more single edges to consider to enter less frequently in the mutex
+    //Create a buffer in the WRAM to read more than one edge from the sample
+    //Better to read more single edges to consider in order to acquire the mutex less often
     uint32_t max_edges_in_sample_buffer = (WRAM_BUFFER_SIZE - (WRAM_BUFFER_SIZE >> 2)) / sizeof(edge_t) ;
     edge_t* sample_buffer = (edge_t*) wram_buffer_ptr;
     uint32_t edges_to_read = 0;
 
-    //Create a buffer in the WRAM of the sample with edges starting with u (1/16) and v (1/16) to speed up research
-    uint32_t max_edges_in_counting_sample_buffer = (WRAM_BUFFER_SIZE >> 3) / sizeof(edge_t);  //Find 1/8 and divide by 2
+    //Create a buffer in the WRAM of the sample with edges starting with u and v to speed up research
+    uint32_t max_edges_in_counting_sample_buffer = (WRAM_BUFFER_SIZE >> 3) / sizeof(edge_t);
     edge_t* u_counting_sample_buffer = (edge_t*) wram_buffer_ptr + max_edges_in_sample_buffer;
     edge_t* v_counting_sample_buffer = (edge_t*) wram_buffer_ptr + max_edges_in_sample_buffer + max_edges_in_counting_sample_buffer;
 
     //After decreasing the size of the stack, there is more space for dynamic allocation
-    //Given a buffer of size N bytes, the cycles needed without a buffer are log2(N/8) * (77 + 0.5 * 8), with a buffer (77 + 0.5 * N)
+    //Given a buffer of size N bytes, the cycles needed for the binary search without a buffer are log2(N/8) * (77 + 0.5 * 8), with a buffer (77 + 0.5 * N)
     //A buffer gives better results with N between 24 and 960
     uint32_t max_node_locs_in_bin_search_buffer = 768 / sizeof(node_loc_t);
     node_loc_t* bin_search_buffer = mem_alloc(max_node_locs_in_bin_search_buffer * sizeof(node_loc_t));
@@ -183,7 +181,6 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     return triangle_count;
 }
 
-//Not much benefit transferring much more data to the WRAM than the one that is necessary
 node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, node_loc_t* node_loc_buffer_ptr, uint32_t max_node_loc_in_buffer, uint32_t* node_locs_in_bin_search_buffer){
 
     int low = 0, high = unique_nodes - 1;

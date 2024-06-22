@@ -30,7 +30,7 @@ __host uint64_t triangle_estimation;
 uint32_t edges_in_sample = 0;
 
 //At first, the batch is at the start of the heap, and the sample at the bottom
-//The last batch is overwritten and the sample is moved in the sorting phase
+//The last batch is overwritten and the sample is moved during the sorting phase
 __mram_ptr edge_t* batch = DPU_MRAM_HEAP_POINTER;  //Max size for batch is 32MB
 __host uint64_t edges_in_batch;
 
@@ -65,7 +65,7 @@ BARRIER_INIT(sync_tasklets, NR_TASKLETS);
 bool is_sample_full = false;
 BARRIER_INIT(sync_replace_in_sample, NR_TASKLETS);
 
-MUTEX_INIT(insert_into_sample);  //Virtual insertion. Increase counter, but insertion is done according to buffer size
+MUTEX_INIT(insert_into_sample);  //Virtual insertion
 
 //It is not possible to use edges_in_sample to know where to save. This variable keeps track of the first
 //free index in the sample where it is possible to save data from the WRAM buffers
@@ -114,7 +114,7 @@ int main() {
         uint32_t batch_buffer_index = max_edges_in_batch_buffer;  //Allows for data to be transfered the first iteration
 
         //This is used to indicate to the single tasklet where to save its buffer in the sample, without requiring to have the transfer inside the mutex
-        //It is determined considering the global variable global_index_to_save_sample
+        //It is determined considering the variable global_index_to_save_sample
         uint32_t local_index_to_save_sample = 0;
 
         while(batch_index_local < batch_index_to){  //Until the end of the section of the batch is reached
@@ -157,7 +157,7 @@ int main() {
 
                     mram_write(batch_buffer, &sample[local_index_to_save_sample], edges_to_copy * sizeof(edge_t));
 
-                    if(edges_to_copy == edges_in_batch_buffer){  //All edges are already transfered. Get new edges
+                    if(edges_to_copy == edges_in_batch_buffer){  //All edges are already transferred. Get new edges
                         batch_buffer_index = max_edges_in_batch_buffer;
                         batch_index_local += max_edges_in_batch_buffer;
                         continue;
@@ -224,7 +224,6 @@ int main() {
             barrier_wait(&sync_tasklets);
         }
 
-        //The first tasklet message will contain the maximum node id
         sort_sample(edges_in_sample, sample, wram_buffer_ptr);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
 
