@@ -29,7 +29,7 @@ void* allocate_dpus(void* dpu_set){
     DPU_ASSERT(dpu_alloc(NR_DPUS, NULL, (struct dpu_set_t*) dpu_set));
     DPU_ASSERT(dpu_load(*(struct dpu_set_t*) dpu_set, DPU_BINARY, NULL));
 
-    if(NR_THREADS > 1){  //If it's possible to use multiple threads, antoher thread does the allocation
+    if(NR_THREADS > 1){  //If it's possible to use multiple threads, another thread is used for the allocation
         pthread_exit(NULL);
     }else{
         return NULL;

@@ -29,9 +29,9 @@ bool is_prime(uint32_t value);
 uint32_t first_prime_over(uint32_t value);
 
 //Apply Misra-Gries
-//If the node id is present, increment its value
+//If the node id is present, increment its frequency
 //If the node id is not present, if there is still enough space, add the node id
-//If the node id is not present and there is not enough space, decrement all values
+//If the node id is not present and there is not enough space, decrement all frequencies
 void update_top_frequency(node_freq_hashtable_t* table, uint32_t node_id);
 
 //Take t most frequent nodes from the threads

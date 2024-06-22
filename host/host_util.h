@@ -7,7 +7,7 @@
 #include "../common/common.h"
 
 /*Wort case, for each edge there is a new unique node.
-considering 63.5MB free in the MRAM for the sample, considering that
+considering 63.5MB free in the MRAM for the sample (very conservative), considering that
 for every edge 16 bytes are occupied, there can be 63.5MB/16B = 4161536 edges
 */
 #ifndef MAX_SAMPLE_SIZE
