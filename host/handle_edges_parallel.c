@@ -89,7 +89,7 @@ void* handle_edges_file(void* args_thread){
         //Each edge is formed by two unsigned integers separated by a space
         sscanf(char_buffer, "%d %d", &node1, &node2);
 
-        //Edges are considered valid from the file (no duplicates, node1 != node2)
+        //Edges are considered valid from the file (no duplicates, node1 != node2). No additional checks are performed
         if(node1 < node2){  //Nodes in edge need to be ordered
            current_edge = (edge_t){node1, node2};
         }else{
@@ -231,8 +231,7 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         //Send data to the DPUs
         pthread_mutex_lock(mutex);
 
-        //Wait for all the DPUs to finish their task.
-        //There is no problem if the program was never launched in the DPUs
+        //Wait for all the DPUs to finish the previous task.
         DPU_ASSERT(dpu_sync(*dpu_set));
 
         uint32_t dpu_id;
@@ -251,7 +250,7 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         //Parallel transfer also for the current batch sizes
         DPU_FOREACH(*dpu_set, dpu, dpu_id) {
 
-            //If less data than the full batch is sent (so the maximum allowed amount of data per transfer)
+            //If less data than the full remaining batch is sent (so the maximum allowed amount of data per transfer)
             if(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch > max_edges_to_send){
                 DPU_ASSERT(dpu_prepare_xfer(dpu, &max_edges_to_send));
 

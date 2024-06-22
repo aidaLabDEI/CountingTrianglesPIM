@@ -23,3 +23,4 @@
 
 ## Other modifications:
 - It is possible to modify the size of the buffer in the WRAM by modifying the value _WRAM\_BUFFER\_SIZE_ inside [dpu_util.h](dpu/dpu_util.h). Do not exceed 2048 bytes.
+- It is possible to modify the maximum supported node identifier by modifying the value _MAX\_SUPPORTED\_NODE\_ID_ inside [common.h](common/common.h).

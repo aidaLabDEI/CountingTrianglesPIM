@@ -85,7 +85,7 @@ void update_top_frequency(node_freq_hashtable_t* table, uint32_t node_id){
         return;
     }
 
-    //Node id not found, but there is still space
+    //Node id not found inside the table, but there is still space
     uint32_t probing_distance = 0;
 
     //Search a place with an empty slot with linear probing

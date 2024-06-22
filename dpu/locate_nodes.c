@@ -163,7 +163,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
 
 void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER){
 
-    //Copy back the node locations (if any). The handshake grants the correct order
+    //Copy back the node locations (if any). The handshake will grant the correct order
     if(*nodes_loc_buffer_index > 0){
         uint32_t local_write_offset = global_write_offset;
         global_write_offset += *nodes_loc_buffer_index;
