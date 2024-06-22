@@ -19,7 +19,7 @@
   - _Misra\_Gries\_dictionary\_size_ is the number of maximum entries in the dictionary for Misra-Gries for each thread. Misra-Gries is not used if not given.
   - _nr\_most\_frequent\_nodes\_sent_ is the number of top frequent nodes sent to the DPUs. It is ignored if Misra-Gries is not used. The default value is 5.
   - _nr\_colors_ is the number of colors used to color the graph. It is also used to determine how many DPUs will be used. **Required**.
-  - _path\_to\_graph\_file_ is the path to the file containing the edges of the graph in Matrix Market format.  **Required**.
+  - _path\_to\_graph\_file_ is the path to the file containing the edges of the graph in COO format.  **Required**.
 
 ## Other modifications:
 - It is possible to modify the size of the buffer in the WRAM by modifying the value _WRAM\_BUFFER\_SIZE_ inside [dpu_util.h](dpu/dpu_util.h). Do not exceed 2048 bytes.

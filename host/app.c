@@ -29,7 +29,7 @@ static float p;  //Probability of ignoring edges
 static uint32_t k;  //Size of Misra-Gries dictionary for each thread
 static uint32_t t;  //Max number of top frequent nodes to send to the DPUs
 static uint32_t colors;  //Number of colors to use
-static char* filename;  //Name of the file in Matrix Market format
+static char* filename;  //Name of the file in COO format
 
 hash_parameters_t coloring_params;  //Set by the main thread, used by all threads
 
