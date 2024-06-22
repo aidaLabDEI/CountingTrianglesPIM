@@ -30,7 +30,7 @@ uint32_t current_split = 0;
 MUTEX_INIT(splits_mutex);
 
 /*This is the main quicksort function. The sample will be moved from the current location to the top of the heap*/
-void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_t* wram_buffer_ptr, uint32_t max_node_id){
+void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_t* wram_buffer_ptr){
 
     //Number of edges per tasklet
     uint32_t nr_edges_tasklets = me() < edges_in_sample % NR_TASKLETS ? edges_in_sample/NR_TASKLETS + 1 : edges_in_sample/NR_TASKLETS;
@@ -46,7 +46,7 @@ void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_
 
     //Determine the number of edges in each partition of quicksort
 
-    edge_t pivot_prev = (edge_t){max_node_id, max_node_id};  //Best performance with starting pivot as high as possible
+    edge_t pivot_prev = (edge_t){MAX_SUPPORTED_NODE_ID, MAX_SUPPORTED_NODE_ID};  //Best performance with starting pivot as high as possible
     for (uint32_t i = NR_SPLITS/2; i > 0; i >>= 1) {
         edge_t pivot = (edge_t){pivot_prev.u >> 1, pivot_prev.v >> 1};  //Determine the pivot depending on the previous one
 

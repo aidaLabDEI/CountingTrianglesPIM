@@ -175,34 +175,6 @@ int main(int argc, char* argv[]){
     char* mmaped_file = (char*) mmap(0, file_stat.st_size, PROT_READ, MAP_PRIVATE | MAP_POPULATE, file_fd, 0);
     close(file_fd);
 
-    //Get the maximum node id inside the graph and the number of edges
-    //The file is in Matrix Market format. Ignore lines that start with %
-    //First real line contains two times the maximum node id and then the number of edges
-    char line[256];
-    uint32_t line_index = 0;
-
-    uint32_t ignored_chars = 0;  //Count the characters already read
-    for(; ignored_chars < sizeof(line) && ignored_chars < file_stat.st_size; ignored_chars++){
-
-        if(mmaped_file[ignored_chars] == '\n'){
-            if(line[0] == '%'){
-                line_index = 0;  //Comment line, ignore it
-                continue;
-            }else{
-                ignored_chars++;  //Skip '\n'
-                break;  //First line containing graph characteristics
-            }
-        }
-        line[line_index++] = mmaped_file[ignored_chars];
-    }
-    line[line_index] = 0;
-
-    uint32_t max_node_id, edges_in_graph;
-    if(sscanf(line, "%d %d %d", &max_node_id, &max_node_id, &edges_in_graph) != 3){
-        printf("Invalid graph format.\n");
-        exit(1);
-    }
-
     ////Allocate the memory used to store the batches to send to the DPUs
 
     //Each thread has its own data, so no mutexes are needed while inserting edges into batches
@@ -211,17 +183,11 @@ int main(int argc, char* argv[]){
     //Limit the size of the batches to fit in memory (occupy a maximum of 90% of free memory)
     uint32_t max_batch_size = (0.9 * get_free_memory() / sizeof(edge_t)) / (NR_THREADS * NR_DPUS);
 
-    //Each DPU will receive a maximum of around (6/C^2) * (edges_in_graph) edges (with colors >= 3).
-    //Edges in graph are multiplied by p to consider only kept edges
-    //Added 50% to try sending only a single batch
-    //This number needs to be divided by the number of threads, because each thread has part of the batch to send a DPU
-    uint32_t batch_size_thread = 1.5 * ((6.0 / (colors*colors)) * edges_in_graph * p) / NR_THREADS;
-    batch_size_thread = batch_size_thread > max_batch_size ? max_batch_size : batch_size_thread;
-
+    //Allocate batches of the maximum size from the beginning, even if it takes more time
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
             dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch = 0;
-            dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(batch_size_thread * sizeof(edge_t));
+            dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(max_batch_size * sizeof(edge_t));
         }
     }
 
@@ -234,7 +200,7 @@ int main(int argc, char* argv[]){
     //Sending the input arguments to the DPUs
     dpu_arguments_t input_arguments = {
         .seed = seed, .sample_size = sample_size,
-        .max_node_id = max_node_id, .t = t
+        .t = t, .padding = 0
     };
 
     DPU_ASSERT(dpu_broadcast_to(dpu_set, "DPU_INPUT_ARGUMENTS", 0, &input_arguments, sizeof(dpu_arguments_t), DPU_XFER_DEFAULT));
@@ -275,14 +241,14 @@ int main(int argc, char* argv[]){
     }
 
     ////Start edge creation
-    uint64_t char_per_thread = (file_stat.st_size - ignored_chars)/NR_THREADS;  //Number of chars that each thread will handle
+    uint64_t char_per_thread = file_stat.st_size/NR_THREADS;  //Number of chars that each thread will handle
     for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
 
         //Determine the sections of chars that each thread will consider
-        uint64_t from_char_in_file = char_per_thread * th_id + ignored_chars;
+        uint64_t from_char_in_file = char_per_thread * th_id;
         uint64_t to_char_in_file;  //Not included
         if(th_id != NR_THREADS-1){
-            to_char_in_file = char_per_thread * (th_id+1) + ignored_chars;
+            to_char_in_file = char_per_thread * (th_id+1);
         }else{
             to_char_in_file = file_stat.st_size;  //If last thread, handle all remaining chars
         }
@@ -290,9 +256,9 @@ int main(int argc, char* argv[]){
         create_batches_args[th_id] = (create_batches_args_t){
             .th_id = th_id,
             .mmaped_file = mmaped_file, .file_size = file_stat.st_size, .from_char = from_char_in_file, .to_char = to_char_in_file,
-            .seed = seed, .p = p, .edges_kept = 0,
+            .seed = seed, .p = p, .edges_kept = 0, .total_edges_thread = 0,
             .k = k, .t = t, .top_freq = top_freq[th_id],
-            .batch_size = batch_size_thread, .colors = colors, .dpu_info_array = dpu_info_array,
+            .batch_size = max_batch_size, .colors = colors, .dpu_info_array = dpu_info_array,
             .dpu_set = &dpu_set, .send_to_dpus_mutex = &send_to_dpus_mutex,
         };
 
@@ -343,6 +309,11 @@ int main(int argc, char* argv[]){
         for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
             free(top_freq[th_id]);
         }
+    }
+
+    uint32_t edges_in_graph = 0;
+    for(int th_id = 0; th_id < NR_THREADS; th_id++){
+        edges_in_graph += create_batches_args[th_id].total_edges_thread;
     }
 
     DPU_ASSERT(dpu_sync(dpu_set));

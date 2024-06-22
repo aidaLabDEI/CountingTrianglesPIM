@@ -220,12 +220,12 @@ int main() {
             }
             barrier_wait(&sync_tasklets);
 
-            frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, DPU_INPUT_ARGUMENTS.max_node_id);
+            frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes);
             barrier_wait(&sync_tasklets);
         }
 
         //The first tasklet message will contain the maximum node id
-        sort_sample(edges_in_sample, sample, wram_buffer_ptr, DPU_INPUT_ARGUMENTS.max_node_id);
+        sort_sample(edges_in_sample, sample, wram_buffer_ptr);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
 
         //After the quicksort, some pointers change. Does not matter if set by all tasklets

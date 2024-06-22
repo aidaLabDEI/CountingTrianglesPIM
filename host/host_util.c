@@ -21,7 +21,7 @@ void usage(){
     printf(" -t #          [Send a maximum of # top frequent nodes to the DPUs. Ignored if Misra-Gries is not used. Default value is 5]\n");
 
     printf(" -c #          [Use # colors to color the nodes of the graph. Required]\n");
-    printf(" -f <filename> [Input Graph in Matrix Market format. Required]\n");
+    printf(" -f <filename> [Input Graph in plain COO format. Required]\n");
     exit(1);
 }
 

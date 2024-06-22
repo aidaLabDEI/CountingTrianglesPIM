@@ -27,6 +27,7 @@ typedef struct{
     int32_t seed;
     double p;
     uint32_t edges_kept;
+    uint32_t total_edges_thread;
 
     //Misra-Gries
     uint32_t k;
