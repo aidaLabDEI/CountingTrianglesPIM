@@ -234,9 +234,12 @@ int main() {
         sort_sample(edges_in_sample, sample, batch, wram_buffer_ptr);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
 
-        //After the quicksort, some pointers change. Does not matter if set by all tasklets
-        FREE_SPACE_HEAP_POINTER = (__mram_ptr void*) sample;  //Now the memory space where the unordered sample can be ovewritten
-        sample = (__mram_ptr edge_t*) batch;  //Now the sample is placed where the batch was
+        //After the quicksort, some pointers change
+        if(tasklet_id == 0){
+            FREE_SPACE_HEAP_POINTER = (__mram_ptr void*) sample;  //Now the memory space where the unordered sample can be ovewritten
+            sample = (__mram_ptr edge_t*) batch;  //Now the sample is placed where the batch was
+        }
+        barrier_wait(&sync_tasklets);
 
         //Each message will contain the local_unique_nodes
         messages[tasklet_id] = node_locations(sample, edges_in_sample, FREE_SPACE_HEAP_POINTER, wram_buffer_ptr);
