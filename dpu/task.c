@@ -19,7 +19,7 @@
 //Variables set by the host
 __host dpu_arguments_t DPU_INPUT_ARGUMENTS;
 
-//When the value is 1, that means that the graph has ended,
+//When the value is odd, that means that the graph has ended,
 //the host has sent the value and the triangle counting can start
 __host uint64_t start_counting = 0;
 
@@ -29,17 +29,15 @@ __host uint64_t triangle_estimation;
 //Current count of edges in the sample (limited by sample size)
 uint32_t edges_in_sample = 0;
 
-//At first, the batch is at the start of the heap, and the sample at the bottom
-//The last batch is overwritten and the sample is moved during the sorting phase
-__mram_ptr edge_t* batch = DPU_MRAM_HEAP_POINTER;  //Max size for batch is 32MB
+__mram_ptr edge_t* batch;  //Max size for batch is 30MB
 __host uint64_t edges_in_batch;
 
 __mram_ptr edge_t* sample;
-__mram_ptr void* AFTER_SAMPLE_HEAP_POINTER;
+__mram_ptr void* FREE_SPACE_HEAP_POINTER;  //The address space where there isn't the sample (beginning or middle of the heap)
 
 //Transfer the data first to the MRAM, and then to the WRAM.
 //This to allow the WRAM buffer to be allocated dynamically
-__mram_ptr node_frequency_t* top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;  //No interference with other elements in MRAM
+__mram_ptr node_frequency_t* top_frequent_nodes_MRAM;  //No interference with other elements in MRAM
 node_frequency_t* top_frequent_nodes;
 __host uint64_t nr_top_nodes;
 
@@ -82,10 +80,6 @@ int main() {
             mem_reset();  //Reset WRAM heap before starting
             srand(DPU_INPUT_ARGUMENTS.seed);  //Effect is global
 
-            //Calculate the initial position of the sample (at the end of the MRAM heap)
-            //Considering that the MRAM has 64MB. -WRAM_BUFFER_SIZE is needed considering that there are different transfers to the WRAM buffer that copy as much as possible (overflow in edge cases)
-            sample = (__mram_ptr edge_t*) (64*1024*1024 - WRAM_BUFFER_SIZE - DPU_INPUT_ARGUMENTS.sample_size * sizeof(edge_t));
-
             //If Misra-Gries is used
             if(DPU_INPUT_ARGUMENTS.t != 0){
                 top_frequent_nodes = mem_alloc(DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
@@ -98,10 +92,22 @@ int main() {
         return 0;
     }
 
+    //Get the update index and see if its even or odd
+    //Pointers need to be updated because the sorting moves the sample
+    if(((start_counting >> 1) & 1) == 0){
+        batch = DPU_MRAM_HEAP_POINTER;
+        sample = (__mram_ptr edge_t*) (32 * 1024 * 1024);
+        top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;
+    }else{
+        batch = (__mram_ptr edge_t*) (32 * 1024 * 1024);
+        sample = DPU_MRAM_HEAP_POINTER;
+        top_frequent_nodes_MRAM = (__mram_ptr node_frequency_t*) (32 * 1024 * 1024);
+    }
+
     //Locate the buffer in the WRAM for this tasklet each run
     void* wram_buffer_ptr = tasklets_buffer_ptrs[me()];
 
-    if(start_counting == 0){  //SAMPLE CREATION OPERATIONS
+    if((start_counting & 1) == 0){  //SAMPLE CREATION OPERATIONS
 
         //Range handled by a tasklet
         uint32_t handled_edges = (uint32_t)edges_in_batch/NR_TASKLETS;
@@ -214,8 +220,8 @@ int main() {
             uint32_t from_edge = edges_per_tasklet * tasklet_id;
             uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
 
-            //Transfer the most frequent nodes from the MRAM to the WRAM
-            if(tasklet_id == 0){
+            //Transfer the most frequent nodes from the MRAM to the WRAM only during the first update
+            if(start_counting == 1 && tasklet_id == 0){
                 mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
             }
             barrier_wait(&sync_tasklets);
@@ -224,15 +230,16 @@ int main() {
             barrier_wait(&sync_tasklets);
         }
 
-        sort_sample(edges_in_sample, sample, wram_buffer_ptr);
+        // Move data from the current position of the sample, overwriting the space used by the batch
+        sort_sample(edges_in_sample, sample, batch, wram_buffer_ptr);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
 
         //After the quicksort, some pointers change. Does not matter if set by all tasklets
-        sample = DPU_MRAM_HEAP_POINTER;
-        AFTER_SAMPLE_HEAP_POINTER = (__mram_ptr void*)sample + edges_in_sample * sizeof(edge_t);  //Just a sum without sizeof because sample's type is edge_t*
+        FREE_SPACE_HEAP_POINTER = (__mram_ptr void*) sample;  //Now the memory space where the unordered sample can be ovewritten
+        sample = (__mram_ptr edge_t*) batch;  //Now the sample is placed where the batch was
 
         //Each message will contain the local_unique_nodes
-        messages[tasklet_id] = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
+        messages[tasklet_id] = node_locations(sample, edges_in_sample, FREE_SPACE_HEAP_POINTER, wram_buffer_ptr);
 
         //Tree-based reduction to find the number of unique nodes
         barrier_wait(&sync_tasklets);
@@ -247,7 +254,7 @@ int main() {
         }
 
         //The first tasklet message will contain the number of unique nodes
-        messages[tasklet_id] = count_triangles(sample, edges_in_sample, messages[0], AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);
+        messages[tasklet_id] = count_triangles(sample, edges_in_sample, messages[0], FREE_SPACE_HEAP_POINTER, wram_buffer_ptr);
 
         //Tree-based reduction to find the total number of triangles
         barrier_wait(&sync_tasklets);

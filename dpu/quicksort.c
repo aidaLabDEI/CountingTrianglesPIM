@@ -30,7 +30,7 @@ uint32_t current_split = 0;
 MUTEX_INIT(splits_mutex);
 
 /*This is the main quicksort function. The sample will be moved from the current location to the top of the heap*/
-void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_t* wram_buffer_ptr){
+void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, __mram_ptr edge_t* sorted_sample_to, edge_t* wram_buffer_ptr){
 
     //Number of edges per tasklet
     uint32_t nr_edges_tasklets = me() < edges_in_sample % NR_TASKLETS ? edges_in_sample/NR_TASKLETS + 1 : edges_in_sample/NR_TASKLETS;
@@ -95,7 +95,7 @@ void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_
     barrier_wait(&sync_tasklets_quicksort);
 
     //Merge partitions into MRAM in the right order. The new sample will be placed at the start of the MRAM heap
-    reorder(sample_from+base_tasklet, DPU_MRAM_HEAP_POINTER, wram_buffer_ptr,
+    reorder(sample_from+base_tasklet, sorted_sample_to, wram_buffer_ptr,
             (uint64_t (*)[NR_TASKLETS]) indices_loc, (uint64_t (*)[NR_TASKLETS]) indices_off);
 
     barrier_wait(&sync_tasklets_quicksort);
@@ -116,7 +116,7 @@ void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_
         nr_edges_tasklets = indices_off[split_task][NR_TASKLETS-1];
 
         if (nr_edges_tasklets > 0) {
-            sort_full(DPU_MRAM_HEAP_POINTER+byte_offset, DPU_MRAM_HEAP_POINTER+byte_offset, nr_edges_tasklets, wram_buffer_ptr);
+            sort_full(sorted_sample_to+byte_offset, sorted_sample_to+byte_offset, nr_edges_tasklets, wram_buffer_ptr);
         }
 
         mutex_lock(splits_mutex);
