@@ -21,7 +21,7 @@ uint32_t rand_range(uint32_t from, uint32_t to){
     return (rand() % (to - from + 1) + from);
 }
 
-void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* sample_buffer, uint32_t nr_top_nodes, node_frequency_t* top_frequent_nodes){
+void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uint32_t to_edge, edge_t* sample_buffer, uint32_t nr_top_nodes, node_frequency_t* top_frequent_nodes, uint32_t max_node_id){
 
     uint32_t max_edges_in_sample_buffer = WRAM_BUFFER_SIZE/sizeof(edge_t);
     uint32_t edges_in_sample_buffer = 0;
@@ -47,11 +47,11 @@ void frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_edge, uin
             for(uint32_t k = 0; k < nr_top_nodes; k++){
 
                 if(sample_buffer[i].u == top_frequent_nodes[k].node_id){
-                    sample_buffer[i].u = MAX_SUPPORTED_NODE_ID - k;
+                    sample_buffer[i].u = max_node_id + nr_top_nodes - k;
                 }
 
                 if(sample_buffer[i].v == top_frequent_nodes[k].node_id){
-                    sample_buffer[i].v = MAX_SUPPORTED_NODE_ID - k;
+                    sample_buffer[i].v = max_node_id + nr_top_nodes - k;
                 }
             }
 
