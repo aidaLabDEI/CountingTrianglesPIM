@@ -5,6 +5,7 @@
 #include <dpu.h>
 
 #include "../common/common.h"
+#include "mg_hashtable.h"
 
 //Allow for files bigger than 4GB
 #define _FILE_OFFSET_BITS 64
@@ -35,6 +36,7 @@ typedef struct{
     uint32_t k;
     uint32_t t;
     node_frequency_t* top_freq;
+    node_freq_hashtable_t* mg_table;
 
     ///Create batches
     uint32_t batch_size;

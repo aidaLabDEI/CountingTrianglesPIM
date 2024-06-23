@@ -183,7 +183,7 @@ int main(int argc, char* argv[]){
     ////Allocate the memory used to store the batches to send to the DPUs
 
     //Each thread has its own data, so no mutexes are needed while inserting edges into batches
-    dpu_info_t* dpu_info_array = malloc(sizeof(dpu_info_t) * NR_THREADS * NR_DPUS);
+    dpu_info_t* dpu_info_array = (dpu_info_t*) malloc(sizeof(dpu_info_t) * NR_THREADS * NR_DPUS);
 
     //Limit the size of the batches to fit in memory (occupy a maximum of 90% of free memory)
     uint32_t max_batch_size = (0.9 * get_free_memory() / sizeof(edge_t)) / (NR_THREADS * NR_DPUS);
@@ -201,15 +201,20 @@ int main(int argc, char* argv[]){
 
     coloring_params = get_hash_parameters();  //Global, shared with other source code file
 
+    //Improve the Misra Gries table each iteration
+    node_freq_hashtable_t mg_tables[NR_THREADS];
+    for(int th_id = 0; th_id < NR_THREADS; th_id++){
+        mg_tables[th_id] = create_hashtable(k);
+    }
+
     //Contains the most frequent nodes in the section of edges analysed by a single thread
     //Only top 2*t are kept considering that t are sent to the DPUs
-    //IF USED, set only during the first update
-    node_frequency_t* top_freq[NR_THREADS];
+    node_frequency_t* top_freq_threads[NR_THREADS];
     for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
         if(k > 0){
-            top_freq[th_id] = (node_frequency_t*) malloc(2 * t * sizeof(node_frequency_t));
+            top_freq_threads[th_id] = (node_frequency_t*) malloc(2 * t * sizeof(node_frequency_t));
         }else{
-            top_freq[th_id] = NULL;  //Do not waste space if Misra-Gries is not used
+            top_freq_threads[th_id] = NULL;  //Do not waste space if Misra-Gries is not used
         }
     }
 
@@ -222,18 +227,14 @@ int main(int argc, char* argv[]){
     //Handle edges in different threads
     create_batches_args_t create_batches_args[NR_THREADS];
 
-    ////Variables that get increase for each update
+    ////Variables that get updated for each update to the graph
     uint32_t edges_in_graph = 0;
     double edges_kept = 0;
-
-
-    //Find the max node id. Necessary because the performance of quicksort highly depends on the accuracy of this value
     uint32_t max_node_id = 0;
-    for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
-        max_node_id = (max_node_id < create_batches_args[th_id].max_node_id) ? create_batches_args[th_id].max_node_id : max_node_id;
-    }
 
-    //The threads sent the last batches, need to wait for them to be processed
+    execution_config_t execution_config;
+
+    //Wait for the initial setup to finish
     DPU_ASSERT(dpu_sync(dpu_set));
 
     //%//%//%//%//%//%//%//%//%//%//%//%//%//%//
@@ -245,8 +246,15 @@ int main(int argc, char* argv[]){
         struct timeval start;
         gettimeofday(&start, 0);
 
-        //Signal the DPUs to update the sample. Encode the update_idx in it
-        execution_config_t execution_config = {2*update_idx, max_node_id};
+        if(k > 0 && update_idx > 0){
+            //Reverse the mapping of the most frequent nodes to allow using more precise data
+            execution_config = (execution_config_t){REVERSE_MAPPING_CODE, max_node_id};
+            DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
+            DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
+        }
+
+        //Signal the DPUs to update the sample the next time they are launched. Encode the update_idx in it
+        execution_config = (execution_config_t){2*update_idx, max_node_id};
         DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
 
         ////Load the file into memory. Faster access from threads when reading edges
@@ -277,7 +285,7 @@ int main(int argc, char* argv[]){
                 .th_id = th_id, .max_node_id = 0, .update_idx = update_idx,
                 .mmaped_file = mmaped_file, .file_size = file_stat.st_size, .from_char = from_char_in_file, .to_char = to_char_in_file,
                 .seed = seed, .p = p, .edges_kept = 0, .total_edges_thread = 0,
-                .k = k, .t = t, .top_freq = top_freq[th_id],
+                .k = k, .t = t, .top_freq = top_freq_threads[th_id], .mg_table = &mg_tables[th_id],
                 .batch_size = max_batch_size, .colors = colors, .dpu_info_array = dpu_info_array,
                 .dpu_set = &dpu_set, .send_to_dpus_mutex = &send_to_dpus_mutex,
             };
@@ -290,16 +298,20 @@ int main(int argc, char* argv[]){
             pthread_join(threads[th_id], NULL);
         }
 
+        //Find the max node id. Necessary because the performance of quicksort highly depends on the accuracy of this value
+        for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
+            max_node_id = (max_node_id < create_batches_args[th_id].max_node_id) ? create_batches_args[th_id].max_node_id : max_node_id;
+        }
+
         //The threads launched the last batches, need to wait for them to be processed
         DPU_ASSERT(dpu_sync(dpu_set));
 
-        //Send the top nodes only after the first update
-        //Updating the top nodes after each update would lead to errors because there is dumb map between old ids and new ids
-        if(update_idx == 0 && k > 0){
+        if(k > 0){
             node_frequency_t top_frequent_nodes[t];
-            uint64_t nr_top_nodes = global_top_freq(top_freq, top_frequent_nodes, t);
+            uint64_t nr_top_nodes = global_top_freq(top_freq_threads, top_frequent_nodes, t);
 
-            DPU_ASSERT(dpu_broadcast_to(dpu_set, DPU_MRAM_HEAP_POINTER_NAME, 0, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
+            uint32_t heap_offset = (update_idx%2 == 0) ? 0 : MIDDLE_HEAP_OFFSET;
+            DPU_ASSERT(dpu_broadcast_to(dpu_set, DPU_MRAM_HEAP_POINTER_NAME, heap_offset, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
             DPU_ASSERT(dpu_broadcast_to(dpu_set, "nr_top_nodes", 0, &nr_top_nodes, sizeof(nr_top_nodes), DPU_XFER_DEFAULT));
         }
 
@@ -315,10 +327,10 @@ int main(int argc, char* argv[]){
         execution_config = (execution_config_t){2*update_idx + 1, max_node_id};
         DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
 
-        //Launch the DPUs program one last time
+        //Launch the DPUs to count the triangles
         DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
 
-        ////Reset the batches (free only at the end)
+        ////Reset the batches (free the memory only at the end)
         for(int th_id = 0; th_id < NR_THREADS; th_id++){
             for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
                 dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch = 0;
@@ -406,7 +418,8 @@ int main(int argc, char* argv[]){
 
     if(k > 0){
         for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
-            free(top_freq[th_id]);
+            free(top_freq_threads[th_id]);
+            delete_hashtable(&mg_tables[th_id]);
         }
     }
 }
