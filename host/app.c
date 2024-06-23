@@ -312,7 +312,7 @@ int main(int argc, char* argv[]){
         gettimeofday(&start, 0);
 
         //Signal the DPUs to start counting
-        execution_config = {2*update_idx + 1, max_node_id};
+        execution_config = (execution_config_t){2*update_idx + 1, max_node_id};
         DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
 
         //Launch the DPUs program one last time
