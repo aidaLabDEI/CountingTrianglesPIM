@@ -94,7 +94,7 @@ int main() {
 
     //Get the update index and see if its even or odd
     //Pointers need to be updated because the sorting moves the sample
-    if(((start_counting >> 1) & 1) == 0){
+    if(((execution_config.execution_code >> 1) & 1) == 0){
         batch = DPU_MRAM_HEAP_POINTER;
         sample = (__mram_ptr edge_t*) (32 * 1024 * 1024);
         top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;
@@ -221,7 +221,7 @@ int main() {
             uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
 
             //Transfer the most frequent nodes from the MRAM to the WRAM only during the first update
-            if(start_counting == 1 && tasklet_id == 0){
+            if(execution_config.execution_code == 1 && tasklet_id == 0){
                 mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
             }
             barrier_wait(&sync_tasklets);
