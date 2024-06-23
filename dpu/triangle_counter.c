@@ -11,6 +11,8 @@
 #include "locate_nodes.h"
 #include "../common/common.h"
 
+node_loc_t* bin_search_buffer_ptrs[NR_TASKLETS] = {NULL};
+
 uint32_t global_sample_read_offset;
 MUTEX_INIT(read_from_sample);
 
@@ -41,7 +43,10 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     //Given a buffer of size N bytes, the cycles needed for the binary search without a buffer are log2(N/8) * (77 + 0.5 * 8), with a buffer (77 + 0.5 * N)
     //A buffer gives better results with N between 24 and 960
     uint32_t max_node_locs_in_bin_search_buffer = 768 / sizeof(node_loc_t);
-    node_loc_t* bin_search_buffer = mem_alloc(max_node_locs_in_bin_search_buffer * sizeof(node_loc_t));
+    if(bin_search_buffer_ptrs[me()] == NULL){
+        bin_search_buffer_ptrs[me()] = mem_alloc(max_node_locs_in_bin_search_buffer * sizeof(node_loc_t));
+    }
+    node_loc_t* bin_search_buffer = bin_search_buffer_ptrs[me()];
     uint32_t node_locs_in_bin_search_buffer = 0;  //How many locations are actually loaded in the cache
 
     uint32_t local_sample_read_index;
