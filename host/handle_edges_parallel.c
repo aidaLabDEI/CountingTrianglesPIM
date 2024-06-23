@@ -54,11 +54,6 @@ void* handle_edges_file(void* args_thread){
     //Seed used for the local random number genetor
     uint32_t local_seed = args->seed + args->th_id;
 
-    node_freq_hashtable_t top_freq;
-    if(args->update_idx == 0 && args->k > 0){
-        top_freq = create_hashtable(args->k);
-    }
-
     edge_t current_edge;
     while (file_char_counter < args->to_char) {
 
@@ -104,9 +99,9 @@ void* handle_edges_file(void* args_thread){
            }
         }
 
-        if(args->update_idx == 0 && args->k > 0){
-            update_top_frequency(&top_freq, node1);
-            update_top_frequency(&top_freq, node2);
+        if(args->k > 0){
+            update_top_frequency(args->mg_table, node1);
+            update_top_frequency(args->mg_table, node2);
         }
 
         insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> colors, args -> th_id,
@@ -115,29 +110,27 @@ void* handle_edges_file(void* args_thread){
 
     send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpus_mutex, args -> dpu_set, args->update_idx);
 
-    if(args->update_idx == 0 && args->k > 0){
+    if(args->k > 0){
         //Select the top 2*t edges to return to the main thread
         //No need to return all top k if only a few are used
         for(uint32_t i = 0; i < 2 * args->t; i++){
             // Find the maximum element in unsorted array
             uint32_t max_idx = i;
             //Consider only valid entries
-            for(uint32_t j = i+1; j < top_freq.size; j++){
-                if(top_freq.table[j].frequency > top_freq.table[max_idx].frequency){
+            for(uint32_t j = i+1; j < args->mg_table->size; j++){
+                if(args->mg_table->table[j].frequency > args->mg_table->table[max_idx].frequency){
                   max_idx = j;
                 }
             }
 
-            args->top_freq[i] = top_freq.table[max_idx];
+            args->top_freq[i] = args->mg_table->table[max_idx];
 
             if(max_idx != i){
-                node_frequency_t temp = top_freq.table[max_idx];
-                top_freq.table[max_idx] = top_freq.table[i];
-                top_freq.table[i] = temp;
+                node_frequency_t temp = args->mg_table->table[max_idx];
+                args->mg_table->table[max_idx] = args->mg_table->table[i];
+                args->mg_table->table[i] = temp;
             }
         }
-
-        delete_hashtable(&top_freq);
     }
 
     pthread_exit(NULL);
@@ -255,7 +248,7 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         uint32_t edges_to_send = batch_too_big ? max_edges_to_send : max_remaining_edges_to_send;
 
         //Depending on the update index, the free space where to send the batch may be at the beginning or in the middle of the heap
-        uint32_t heap_offset = (update_idx%2 == 0) ? 0 : (32*1024*1024);
+        uint32_t heap_offset = (update_idx%2 == 0) ? 0 : MIDDLE_HEAP_OFFSET;
         DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, heap_offset, edges_to_send * sizeof(edge_t), DPU_XFER_DEFAULT));
 
         //Parallel transfer also for the current batch sizes

@@ -73,10 +73,12 @@ MUTEX_INIT(replace_in_sample);
 
 int main() {
 
+    uint32_t tasklet_id = me();  //Makes it easier to understand the code
+
     if(!is_setup_done){
 
         //Make only one tasklet set up the variables for the entire DPU (and so all tasklets)
-        if(me() == 0){
+        if(tasklet_id == 0){
             mem_reset();  //Reset WRAM heap before starting
             srand(DPU_INPUT_ARGUMENTS.seed);  //Effect is global
 
@@ -86,9 +88,31 @@ int main() {
             }
         }
         barrier_wait(&sync_tasklets);  //Wait for memory reset
-        tasklets_buffer_ptrs[me()] = mem_alloc(WRAM_BUFFER_SIZE);  //Create the buffer in the WRAM for every tasklet. Generic void* pointer
+        tasklets_buffer_ptrs[tasklet_id] = mem_alloc(WRAM_BUFFER_SIZE);  //Create the buffer in the WRAM for every tasklet. Generic void* pointer
 
         is_setup_done = true;
+        return 0;
+    }
+
+    //Locate the buffer in the WRAM for this tasklet each run
+    void* wram_buffer_ptr = tasklets_buffer_ptrs[tasklet_id];
+
+    //Execute only if reverse mapping is triggered
+    //It makes use of the previous max node id and expects the most frequent nodes to be already present in WRAM
+    //The pointer to the sample was set correctly in the previous execution
+    if(execution_config.execution_code == REVERSE_MAPPING_CODE){
+        //If Misra-Gries is used
+        if(DPU_INPUT_ARGUMENTS.t != 0){
+
+            //Split the workload equally among the tasklets
+            uint32_t edges_per_tasklet = edges_in_sample/NR_TASKLETS;
+            uint32_t from_edge = edges_per_tasklet * tasklet_id;
+            uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
+
+            //Most frequent nodes to be already loaded in WRAM
+            reverse_frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
+            barrier_wait(&sync_tasklets);
+        }
         return 0;
     }
 
@@ -96,23 +120,20 @@ int main() {
     //Pointers need to be updated because the sorting moves the sample
     if(((execution_config.execution_code >> 1) & 1) == 0){
         batch = DPU_MRAM_HEAP_POINTER;
-        sample = DPU_MRAM_HEAP_POINTER + 32 * 1024 * 1024;
+        sample = DPU_MRAM_HEAP_POINTER + MIDDLE_HEAP_OFFSET;
         top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;
     }else{
-        batch = DPU_MRAM_HEAP_POINTER + 32 * 1024 * 1024;
+        batch = DPU_MRAM_HEAP_POINTER + MIDDLE_HEAP_OFFSET;
         sample = DPU_MRAM_HEAP_POINTER;
-        top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER + 32 * 1024 * 1024;
+        top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER + MIDDLE_HEAP_OFFSET;
     }
-
-    //Locate the buffer in the WRAM for this tasklet each run
-    void* wram_buffer_ptr = tasklets_buffer_ptrs[me()];
 
     if((execution_config.execution_code & 1) == 0){  //SAMPLE CREATION OPERATIONS
 
         //Range handled by a tasklet
         uint32_t handled_edges = (uint32_t)edges_in_batch/NR_TASKLETS;
-        uint32_t batch_index_local = handled_edges * me();  //The first edge handled by a tasklet
-        uint32_t batch_index_to = (me() == NR_TASKLETS-1) ? edges_in_batch : handled_edges * (me()+1);
+        uint32_t batch_index_local = handled_edges * tasklet_id;  //The first edge handled by a tasklet
+        uint32_t batch_index_to = (tasklet_id == NR_TASKLETS-1) ? edges_in_batch : handled_edges * (tasklet_id+1);
 
         edge_t* batch_buffer = (edge_t*) wram_buffer_ptr;
         uint32_t max_edges_in_batch_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t));
@@ -209,7 +230,6 @@ int main() {
         }
 
     }else if(edges_in_sample > 0){  //TRIANGLE COUNTING OPERATIONS
-        uint32_t tasklet_id = me();  //Makes it easier to understand the code
 
         //If Misra-Gries is used
         if(DPU_INPUT_ARGUMENTS.t != 0){
@@ -220,7 +240,7 @@ int main() {
             uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
 
             //Transfer the most frequent nodes from the MRAM to the WRAM only during the first update
-            if(execution_config.execution_code == 1 && tasklet_id == 0){
+            if(tasklet_id == 0){
                 mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
             }
             barrier_wait(&sync_tasklets);
@@ -270,7 +290,7 @@ int main() {
             barrier_wait(&sync_tasklets);
         }
 
-        if(me() == 0){
+        if(tasklet_id == 0){
             if(edges_in_sample < total_edges){
                 //Normalization of the result considering the substituted edges may have removed triangles
                 double p = ((float)DPU_INPUT_ARGUMENTS.sample_size/total_edges)*((float)(DPU_INPUT_ARGUMENTS.sample_size-1)/(total_edges-1))*((float)(DPU_INPUT_ARGUMENTS.sample_size-2)/(total_edges-2));

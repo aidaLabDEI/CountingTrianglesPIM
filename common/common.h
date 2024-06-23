@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#define REVERSE_MAPPING_CODE 2147483647  //A high number that very unlikely will be used for something else
+#define MIDDLE_HEAP_OFFSET 32*1024*1024
+
 //Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
 typedef struct {
     uint32_t seed;
