@@ -6,18 +6,30 @@
 #include <stdbool.h>  //Booleans
 #include <defs.h>  //Get tasklet id
 #include <handshake.h>  //Handshake for tasklets
+#include <barrier.h>  //Barrier for tasklets
 
 #include "../common/common.h"
 #include "locate_nodes.h"
 #include "dpu_util.h"
 
 //Offset where to write and read in the MRAM common for all tasklets
-uint32_t global_read_offset = 0;
-uint32_t global_write_offset = 0;
+uint32_t global_read_offset;
+uint32_t global_write_offset;
 
 uint32_t remaining_tasklets = NR_TASKLETS;
 
+BARRIER_INIT(sync_reset_locate_nodes, NR_TASKLETS);
+
 uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __mram_ptr void* FREE_SPACE_HEAP_POINTER, void* wram_buffer_ptr){
+
+    //Reset values to handle a new update
+    if(me() == 0){
+        global_read_offset = 0;
+        global_write_offset = 0;
+        remaining_tasklets = NR_TASKLETS;
+    }
+    barrier_wait(&sync_reset_locate_nodes);
+
     //Create a buffer in the WRAM of the sample to speed up research
     uint32_t max_edges_in_sample_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;  //Divide by 2 with right shift
     //Use half the WRAM buffer for buffering the sample

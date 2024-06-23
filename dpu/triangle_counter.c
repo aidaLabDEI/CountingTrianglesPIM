@@ -1,6 +1,7 @@
 #include <stdlib.h>  //Various things
 #include <stdio.h>  //Mainly debug messages
 #include <mram.h>  //Transfer data between WRAM and MRAM. Access MRAM
+#include <barrier.h>  //Barrier for tasklets
 #include <mutex.h>  //Mutex for tasklets
 #include <alloc.h>  //Alloc heap in WRAM
 #include <defs.h>
@@ -10,10 +11,19 @@
 #include "locate_nodes.h"
 #include "../common/common.h"
 
-uint32_t global_sample_read_offset = 0;
+uint32_t global_sample_read_offset;
 MUTEX_INIT(read_from_sample);
 
+BARRIER_INIT(sync_reset_triangle_counting, NR_TASKLETS);
+
 uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, uint32_t num_locations, __mram_ptr void* FREE_SPACE_HEAP_POINTER, void* wram_buffer_ptr){
+
+    //Reset value to handle a new update
+    if(me() == 0){
+        global_sample_read_offset = 0;
+    }
+    barrier_wait(&sync_reset_triangle_counting);
+
     uint32_t triangle_count = 0;
 
     //Create a buffer in the WRAM to read more than one edge from the sample

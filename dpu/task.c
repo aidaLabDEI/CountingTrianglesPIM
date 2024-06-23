@@ -96,12 +96,12 @@ int main() {
     //Pointers need to be updated because the sorting moves the sample
     if(((execution_config.execution_code >> 1) & 1) == 0){
         batch = DPU_MRAM_HEAP_POINTER;
-        sample = (__mram_ptr edge_t*) (32 * 1024 * 1024);
+        sample = DPU_MRAM_HEAP_POINTER + 32 * 1024 * 1024;
         top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER;
     }else{
-        batch = (__mram_ptr edge_t*) (32 * 1024 * 1024);
+        batch = DPU_MRAM_HEAP_POINTER + 32 * 1024 * 1024;
         sample = DPU_MRAM_HEAP_POINTER;
-        top_frequent_nodes_MRAM = (__mram_ptr node_frequency_t*) (32 * 1024 * 1024);
+        top_frequent_nodes_MRAM = DPU_MRAM_HEAP_POINTER + 32 * 1024 * 1024;
     }
 
     //Locate the buffer in the WRAM for this tasklet each run
@@ -209,7 +209,6 @@ int main() {
         }
 
     }else if(edges_in_sample > 0){  //TRIANGLE COUNTING OPERATIONS
-
         uint32_t tasklet_id = me();  //Makes it easier to understand the code
 
         //If Misra-Gries is used
@@ -237,7 +236,7 @@ int main() {
         //After the quicksort, some pointers change
         if(tasklet_id == 0){
             FREE_SPACE_HEAP_POINTER = (__mram_ptr void*) sample;  //Now the memory space where the unordered sample can be ovewritten
-            sample = (__mram_ptr edge_t*) batch;  //Now the sample is placed where the batch was
+            sample = (__mram_ptr void*) batch;  //Now the sample is placed where the batch was
         }
         barrier_wait(&sync_tasklets);
 

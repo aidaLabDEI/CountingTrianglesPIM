@@ -26,11 +26,19 @@ __mram uint64_t indices_loc[NR_SPLITS][NR_TASKLETS];
 __mram uint64_t indices_off[NR_SPLITS][NR_TASKLETS];
 
 //Determine which split needs to be ordered next by a tasklet
-uint32_t current_split = 0;
+uint32_t current_split;
 MUTEX_INIT(splits_mutex);
 
+BARRIER_INIT(sync_reset_quicksort, NR_TASKLETS);
+
 /*This is the main quicksort function. The sample will be moved from the current location to the top of the heap*/
-void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, __mram_ptr edge_t* sorted_sample_to, edge_t* wram_buffer_ptr, uint32_t max_node_id){
+void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, __mram_ptr void* sorted_sample_to, edge_t* wram_buffer_ptr, uint32_t max_node_id){
+
+    //Reset values to handle a new update
+    if(me() == 0){
+        current_split = 0;
+    }
+    barrier_wait(&sync_reset_quicksort);
 
     //Number of edges per tasklet
     uint32_t nr_edges_tasklets = me() < edges_in_sample % NR_TASKLETS ? edges_in_sample/NR_TASKLETS + 1 : edges_in_sample/NR_TASKLETS;
