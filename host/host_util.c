@@ -4,7 +4,6 @@
 #include <stdlib.h>  //Exit
 #include <assert.h>  //Assert
 #include <dpu.h>  //Create dpu set
-#include <pthread.h>
 
 #include "mg_hashtable.h"
 #include "host_util.h"
@@ -13,15 +12,15 @@ void usage(){
 
     printf("Triangle Counting on the UPMEM architecture\n\n");
     printf("Usage:\n\n");
-    printf(" -s #          [Seed # is used for the random number generator. Random if not given]\n");
-    printf(" -M #          [The sample size inside the DPUs is #. Maximum allowed value if not given]\n");
-    printf(" -p #          [Edges are kept with probability #. No edges are ignored (p = 1) if not given]\n");
+    printf(" -s #                 [Seed # is used for the random number generator. Random if not given]\n");
+    printf(" -M #                 [The sample size inside the DPUs is #. Maximum allowed value if not given]\n");
+    printf(" -p #                 [Edges are kept with probability #. No edges are ignored (p = 1) if not given]\n");
 
-    printf(" -k #          [The dictionary for Misra-Gries for each thread has a maximum of # entries. Misra-Gries is not used if not given]\n");
-    printf(" -t #          [Send a maximum of # top frequent nodes to the DPUs. Ignored if Misra-Gries is not used. Default value is 5]\n");
+    printf(" -k #                 [The dictionary for Misra-Gries for each thread has a maximum of # entries. Misra-Gries is not used if not given]\n");
+    printf(" -t #                 [Send a maximum of # top frequent nodes to the DPUs. Ignored if Misra-Gries is not used. Default value is 5]\n");
 
-    printf(" -c #          [Use # colors to color the nodes of the graph. Required]\n");
-    printf(" -f <filename> [Input Graph in plain COO format. Required]\n");
+    printf(" -c #                 [Use # colors to color the nodes of the graph. Required]\n");
+    printf(" -f # <filenames ...> [Number of graph update files and their filenames. COO format. Required]\n");
     exit(1);
 }
 
@@ -29,11 +28,7 @@ void* allocate_dpus(void* dpu_set){
     DPU_ASSERT(dpu_alloc(NR_DPUS, NULL, (struct dpu_set_t*) dpu_set));
     DPU_ASSERT(dpu_load(*(struct dpu_set_t*) dpu_set, DPU_BINARY, NULL));
 
-    if(NR_THREADS > 1){  //If it's possible to use multiple threads, another thread is used for the allocation
-        pthread_exit(NULL);
-    }else{
-        return NULL;
-    }
+    return NULL;
 }
 
 float timedifference_msec(struct timeval t0, struct timeval t1){

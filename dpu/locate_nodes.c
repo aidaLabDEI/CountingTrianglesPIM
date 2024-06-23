@@ -17,7 +17,7 @@ uint32_t global_write_offset = 0;
 
 uint32_t remaining_tasklets = NR_TASKLETS;
 
-uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr){
+uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __mram_ptr void* FREE_SPACE_HEAP_POINTER, void* wram_buffer_ptr){
     //Create a buffer in the WRAM of the sample to speed up research
     uint32_t max_edges_in_sample_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t)) >> 1;  //Divide by 2 with right shift
     //Use half the WRAM buffer for buffering the sample
@@ -64,7 +64,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
 
             /*WRITE TO THE MRAM*/
             if(!is_first_read){  //Nothing to write at first
-                write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer, AFTER_SAMPLE_HEAP_POINTER);
+                write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer, FREE_SPACE_HEAP_POINTER);
             }
 
             //Making the tasklet write outside of the handshake lock is painfully difficult
@@ -107,7 +107,6 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
             //Skip until there are edges to consider and, if there is a previous node id, the current node id is the same
             for(; sample_buffer_index < edges_read; sample_buffer_index++){
                 current_node_id = sample_buffer[sample_buffer_index].u;
-
                 //If it is the first edge or if it is a new node, it must be considered
                 if(local_read_offset == 0 || current_node_id != previous_node_id){
                     break;
@@ -151,7 +150,7 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     }
 
     //Write the last node locations
-    write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer, AFTER_SAMPLE_HEAP_POINTER);
+    write_nodes_loc(&nodes_loc_buffer_index, nodes_loc_buffer, FREE_SPACE_HEAP_POINTER);
     remaining_tasklets--;
 
     if(NR_TASKLETS > 1 && remaining_tasklets > 0){
@@ -161,14 +160,14 @@ uint32_t node_locations(__mram_ptr edge_t* sample, uint32_t edges_in_sample, __m
     return local_unique_nodes;
 }
 
-void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer, __mram_ptr node_loc_t* AFTER_SAMPLE_HEAP_POINTER){
+void write_nodes_loc(uint32_t* nodes_loc_buffer_index, node_loc_t* nodes_loc_buffer, __mram_ptr node_loc_t* FREE_SPACE_HEAP_POINTER){
 
     //Copy back the node locations (if any). The handshake will grant the correct order
     if(*nodes_loc_buffer_index > 0){
         uint32_t local_write_offset = global_write_offset;
         global_write_offset += *nodes_loc_buffer_index;
 
-        mram_write(nodes_loc_buffer, (__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + local_write_offset), (*nodes_loc_buffer_index) * sizeof(node_loc_t));
+        mram_write(nodes_loc_buffer, (__mram_ptr void*) (FREE_SPACE_HEAP_POINTER + local_write_offset), (*nodes_loc_buffer_index) * sizeof(node_loc_t));
         *nodes_loc_buffer_index = 0;
     }
 }
@@ -191,12 +190,12 @@ uint32_t virtually_read_from_sample(uint32_t edges_in_sample, uint32_t* edges_re
 }
 
 //No need to use WRAM buffer because it is only for debugging
-void print_node_locations(uint32_t number_of_nodes, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER){
+void print_node_locations(uint32_t number_of_nodes, __mram_ptr void* FREE_SPACE_HEAP_POINTER){
     printf("Printing the node location informations. There are %d unique nodes:\n", number_of_nodes);
 
     for(uint32_t i = 0; i < number_of_nodes; i++){
         node_loc_t current_node;
-        mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + i * sizeof(node_loc_t)), &current_node, sizeof(node_loc_t));  //Read the informations of one node from MRAM
+        mram_read((__mram_ptr void*) (FREE_SPACE_HEAP_POINTER + i * sizeof(node_loc_t)), &current_node, sizeof(node_loc_t));  //Read the informations of one node from MRAM
         printf("Id: %d Index in sample: %d\n", current_node.id, current_node.index_in_sample);
     }
 }
