@@ -55,7 +55,7 @@ void* handle_edges_file(void* args_thread){
     uint32_t local_seed = args->seed + args->th_id;
 
     node_freq_hashtable_t top_freq;
-    if(args->k > 0){
+    if(args->update_idx == 0 && args->k > 0){
         top_freq = create_hashtable(args->k);
     }
 
@@ -104,17 +104,18 @@ void* handle_edges_file(void* args_thread){
            }
         }
 
-        if(args->k > 0){
+        if(args->update_idx == 0 && args->k > 0){
             update_top_frequency(&top_freq, node1);
             update_top_frequency(&top_freq, node2);
         }
 
-        insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> colors, args -> th_id, args -> send_to_dpus_mutex, args -> dpu_set);
+        insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> colors, args -> th_id,
+            args -> send_to_dpus_mutex, args -> dpu_set, args->update_idx);
     }
 
-    send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpus_mutex, args -> dpu_set);
+    send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpus_mutex, args -> dpu_set, args->update_idx);
 
-    if(args->k > 0){
+    if(args->update_idx == 0 && args->k > 0){
         //Select the top 2*t edges to return to the main thread
         //No need to return all top k if only a few are used
         for(uint32_t i = 0; i < 2 * args->t; i++){
@@ -142,7 +143,7 @@ void* handle_edges_file(void* args_thread){
     pthread_exit(NULL);
 }
 
-void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, uint32_t colors, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
+void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, uint32_t colors, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set, uint32_t update_idx){
 
     //Given that the current edge has colors (a,b), with a <= b
     edge_colors_t current_edge_colors = get_edge_colors(current_edge, colors);
@@ -165,7 +166,7 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
         (current_dpu_info -> batch)[(current_dpu_info -> edge_count_batch)++] = current_edge;
 
         if(current_dpu_info->edge_count_batch == batch_size){
-            send_batches(th_id, dpu_info_array, mutex, dpu_set);
+            send_batches(th_id, dpu_info_array, mutex, dpu_set, update_idx);
         }
 
         current_dpu_id++;
@@ -186,7 +187,7 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
             (current_dpu_info -> batch)[(current_dpu_info -> edge_count_batch)++] = current_edge;
 
             if(current_dpu_info->edge_count_batch == batch_size){
-                send_batches(th_id, dpu_info_array, mutex, dpu_set);
+                send_batches(th_id, dpu_info_array, mutex, dpu_set, update_idx);
             }
         }
 
@@ -205,7 +206,7 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
             (current_dpu_info -> batch)[(current_dpu_info -> edge_count_batch)++] = current_edge;
 
             if(current_dpu_info->edge_count_batch == batch_size){
-                send_batches(th_id, dpu_info_array, mutex, dpu_set);
+                send_batches(th_id, dpu_info_array, mutex, dpu_set, update_idx);
             }
 
             current_dpu_id += (1.0/2) * (colors - c1) * (colors - c1 + 1);
@@ -213,7 +214,7 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
     }
 }
 
-void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set){
+void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set, uint32_t update_idx){
 
     //Limit transfers to 30MB
     uint64_t max_edges_per_transfer = (30*1024*1024) / sizeof(edge_t);
@@ -253,7 +254,9 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         bool batch_too_big = max_remaining_edges_to_send > max_edges_to_send;
         uint32_t edges_to_send = batch_too_big ? max_edges_to_send : max_remaining_edges_to_send;
 
-        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, edges_to_send * sizeof(edge_t), DPU_XFER_DEFAULT));
+        //Depending on the update index, the free space where to send the batch may be at the beginning or in the middle of the heap
+        uint32_t heap_offset = (update_idx%2 == 0) ? 0 : (32*1024*1024);
+        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, heap_offset, edges_to_send * sizeof(edge_t), DPU_XFER_DEFAULT));
 
         //Parallel transfer also for the current batch sizes
         DPU_FOREACH(*dpu_set, dpu, dpu_id) {

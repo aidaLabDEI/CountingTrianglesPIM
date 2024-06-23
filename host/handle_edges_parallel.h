@@ -17,6 +17,7 @@ typedef struct{
 typedef struct{
     uint32_t th_id;
     uint32_t max_node_id;
+    uint32_t update_idx;  //Index of the update file
 
     //Handle the file
     char* mmaped_file;  //Information about file
@@ -52,9 +53,9 @@ edge_colors_t get_edge_colors(edge_t edge, uint32_t colors);
 void* handle_edges_file(void* args_thread);
 
 //Insert the current edge into the correct batches considering how triplets are assigned to the DPUs
-void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, uint32_t colors, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set);
+void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, uint32_t batch_size, uint32_t colors, uint32_t th_id, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set, uint32_t update_idx);
 
 //Send the full batch to the specific DPU. th_id_to is not included
-void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set);
+void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set, uint32_t update_idx);
 
 #endif /* __HOST_UTIL_H_ */
