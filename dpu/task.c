@@ -19,9 +19,9 @@
 //Variables set by the host
 __host dpu_arguments_t DPU_INPUT_ARGUMENTS;
 
-//When the value is odd, that means that the graph has ended,
+//When the execution code is odd, that means that the graph has ended,
 //the host has sent the value and the triangle counting can start
-__host uint64_t start_counting = 0;
+__host execution_config_t execution_config = {0, 0};
 
 //Variable that will be read by the host at the end
 __host uint64_t triangle_estimation;
@@ -107,7 +107,7 @@ int main() {
     //Locate the buffer in the WRAM for this tasklet each run
     void* wram_buffer_ptr = tasklets_buffer_ptrs[me()];
 
-    if((start_counting & 1) == 0){  //SAMPLE CREATION OPERATIONS
+    if((execution_config.execution_code & 1) == 0){  //SAMPLE CREATION OPERATIONS
 
         //Range handled by a tasklet
         uint32_t handled_edges = (uint32_t)edges_in_batch/NR_TASKLETS;
@@ -226,12 +226,12 @@ int main() {
             }
             barrier_wait(&sync_tasklets);
 
-            frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes);
+            frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
             barrier_wait(&sync_tasklets);
         }
 
         // Move data from the current position of the sample, overwriting the space used by the batch
-        sort_sample(edges_in_sample, sample, batch, wram_buffer_ptr);
+        sort_sample(edges_in_sample, sample, batch, wram_buffer_ptr, execution_config.max_node_id);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
 
         //After the quicksort, some pointers change

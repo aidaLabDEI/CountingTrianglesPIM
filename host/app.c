@@ -226,6 +226,14 @@ int main(int argc, char* argv[]){
     uint32_t edges_in_graph = 0;
     double edges_kept = 0;
 
+
+    //Find the max node id. Necessary because the performance of quicksort highly depends on the accuracy of this value
+    uint32_t max_node_id = 0;
+    for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
+        max_node_id = (max_node_id < create_batches_args[th_id].max_node_id) ? create_batches_args[th_id].max_node_id : max_node_id;
+    }
+
+    //The threads sent the last batches, need to wait for them to be processed
     DPU_ASSERT(dpu_sync(dpu_set));
 
     //%//%//%//%//%//%//%//%//%//%//%//%//%//%//
@@ -238,8 +246,8 @@ int main(int argc, char* argv[]){
         gettimeofday(&start, 0);
 
         //Signal the DPUs to update the sample. Encode the update_idx in it
-        uint64_t start_counting = 2*update_idx;
-        DPU_ASSERT(dpu_broadcast_to(dpu_set, "start_counting", 0, &start_counting, sizeof(start_counting), DPU_XFER_DEFAULT));
+        execution_config_t execution_config = {2*update_idx, max_node_id};
+        DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
 
         ////Load the file into memory. Faster access from threads when reading edges
         struct stat file_stat;
@@ -266,7 +274,7 @@ int main(int argc, char* argv[]){
             }
 
             create_batches_args[th_id] = (create_batches_args_t){
-                .th_id = th_id, .update_idx = update_idx,
+                .th_id = th_id, .max_node_id = 0, .update_idx = update_idx,
                 .mmaped_file = mmaped_file, .file_size = file_stat.st_size, .from_char = from_char_in_file, .to_char = to_char_in_file,
                 .seed = seed, .p = p, .edges_kept = 0, .total_edges_thread = 0,
                 .k = k, .t = t, .top_freq = top_freq[th_id],
@@ -304,8 +312,8 @@ int main(int argc, char* argv[]){
         gettimeofday(&start, 0);
 
         //Signal the DPUs to start counting
-        start_counting = 2*update_idx + 1;
-        DPU_ASSERT(dpu_broadcast_to(dpu_set, "start_counting", 0, &start_counting, sizeof(start_counting), DPU_XFER_DEFAULT));
+        execution_config = {2*update_idx + 1, max_node_id};
+        DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
 
         //Launch the DPUs program one last time
         DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));

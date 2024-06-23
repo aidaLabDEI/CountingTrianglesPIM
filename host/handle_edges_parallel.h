@@ -16,6 +16,7 @@ typedef struct{
 
 typedef struct{
     uint32_t th_id;
+    uint32_t max_node_id;
     uint32_t update_idx;  //Index of the update file
 
     //Handle the file
