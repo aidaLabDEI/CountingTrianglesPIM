@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#define MAX_SUPPORTED_NODE_ID (2 << 29)
-
 //Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
 typedef struct {
     uint32_t seed;
@@ -12,6 +10,11 @@ typedef struct {
     uint32_t t;
     uint32_t padding;
 } dpu_arguments_t;
+
+typedef struct{
+    uint32_t execution_code;
+    uint32_t max_node_id;
+} execution_config_t;
 
 //Contains the two nodes that make an edge
 typedef struct {

@@ -92,8 +92,16 @@ void* handle_edges_file(void* args_thread){
         //Edges are considered valid from the file (no duplicates, node1 != node2). No additional checks are performed
         if(node1 < node2){  //Nodes in edge need to be ordered
            current_edge = (edge_t){node1, node2};
+
+           if(node2 > args->max_node_id){
+               args->max_node_id = node2;
+           }
         }else{
            current_edge = (edge_t){node2, node1};
+
+           if(node1 > args->max_node_id){
+               args->max_node_id = node1;
+           }
         }
 
         if(args->update_idx == 0 && args->k > 0){
