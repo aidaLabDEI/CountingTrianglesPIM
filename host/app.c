@@ -167,7 +167,7 @@ int main(int argc, char* argv[]){
     ////Allocate DPUs
     struct dpu_set_t dpu_set, dpu;
 
-    // No need to allocate DPUs in parallel because setup time is meaningless here
+    // No need to allocate DPUs in parallel because setup time is meaningless in this mode
     allocate_dpus((void*) &dpu_set);
 
     //Sending the input arguments to the DPUs
@@ -201,7 +201,7 @@ int main(int argc, char* argv[]){
 
     coloring_params = get_hash_parameters();  //Global, shared with other source code file
 
-    //Improve the Misra Gries table each iteration
+    //Improve the Misra Gries table each iteration, so do not reset it between updates
     node_freq_hashtable_t mg_tables[NR_THREADS];
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         mg_tables[th_id] = create_hashtable(k);
@@ -224,15 +224,10 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
-    //Handle edges in different threads
-    create_batches_args_t create_batches_args[NR_THREADS];
-
     ////Variables that get updated for each update to the graph
     uint32_t edges_in_graph = 0;
     double edges_kept = 0;
     uint32_t max_node_id = 0;
-
-    execution_config_t execution_config;
 
     //Wait for the initial setup to finish
     DPU_ASSERT(dpu_sync(dpu_set));
@@ -245,6 +240,8 @@ int main(int argc, char* argv[]){
         //Start measuring update load time
         struct timeval start;
         gettimeofday(&start, 0);
+
+        execution_config_t execution_config;
 
         if(k > 0 && update_idx > 0){
             //Reverse the mapping of the most frequent nodes to allow using more precise data
@@ -266,6 +263,7 @@ int main(int argc, char* argv[]){
         close(file_fd);
 
         //Handle edges in different threads
+        create_batches_args_t create_batches_args[NR_THREADS];
         pthread_t threads[NR_THREADS];
 
         ////Start edge creation
