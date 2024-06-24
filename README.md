@@ -9,7 +9,7 @@
 
   To execute the code, it is necessary to run, inside the folder (bin) created after make, the following command:
   ```
-  ./app -s seed -M sample_size -p keep_percentage -k Misra_Gries_dictionary_size -t nr_most_frequent_nodes_sent -c nr_colors -f path_to_graph_file
+  ./app -s seed -M sample_size -p keep_percentage -k Misra_Gries_dictionary_size -t nr_most_frequent_nodes_sent -c nr_colors -f nr_updates path_to_graph_files
   ```
   where:
 
@@ -19,7 +19,8 @@
   - _Misra\_Gries\_dictionary\_size_ is the number of maximum entries in the dictionary for Misra-Gries for each thread. Misra-Gries is not used if not given.
   - _nr\_most\_frequent\_nodes\_sent_ is the number of top frequent nodes sent to the DPUs. It is ignored if Misra-Gries is not used. The default value is 5.
   - _nr\_colors_ is the number of colors used to color the graph. It is also used to determine how many DPUs will be used. **Required**.
-  - _path\_to\_graph\_file_ is the path to the file containing the edges of the graph in COO format.  **Required**.
+  - _nr\_updates_ is the number of files that contain updates to the graph. **Required**.
+  - _path\_to\_graph\_files_ are the paths to the files containing the edges of the updates to the graph in COO format. **Required**.
 
 ## Other modifications:
 - It is possible to modify the size of the buffer in the WRAM by modifying the value _WRAM\_BUFFER\_SIZE_ inside [dpu_util.h](dpu/dpu_util.h). Do not exceed 2048 bytes.
