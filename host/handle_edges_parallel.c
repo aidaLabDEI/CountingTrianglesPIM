@@ -215,6 +215,7 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
     //Determine the max amount of edges per batch that this thread needs to send
     uint32_t max_edges_to_send = 0;
     for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+        dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
         if(max_edges_to_send < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch){
             max_edges_to_send = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
         }
@@ -225,8 +226,8 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         //Size of the biggest remaining batch
         uint32_t max_remaining_edges_to_send = 0;
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            if(max_remaining_edges_to_send < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch){
-                max_remaining_edges_to_send = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
+            if(max_remaining_edges_to_send < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy){
+                max_remaining_edges_to_send = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy;
             }
         }
 
@@ -255,15 +256,15 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         DPU_FOREACH(*dpu_set, dpu, dpu_id) {
 
             //If less data than the full remaining batch is sent (so the maximum allowed amount of data per transfer)
-            if(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch > max_edges_to_send){
+            if(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy > max_edges_to_send){
                 DPU_ASSERT(dpu_prepare_xfer(dpu, &max_edges_to_send));
 
             }else{
-                DPU_ASSERT(dpu_prepare_xfer(dpu, &dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch));
+                DPU_ASSERT(dpu_prepare_xfer(dpu, &dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy));
             }
         }
 
-        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch), DPU_XFER_DEFAULT));
+        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy), DPU_XFER_DEFAULT));
 
         DPU_ASSERT(dpu_launch(*dpu_set, DPU_ASYNCHRONOUS));
 
@@ -271,9 +272,9 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
 
         //Update the count for the remaining edges to send
         for(dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            uint32_t last_batch_size = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
+            uint32_t last_batch_size = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy;
 
-            dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch =
+            dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy =
                 last_batch_size >= max_edges_to_send ? last_batch_size - max_edges_to_send : 0;
         }
     }

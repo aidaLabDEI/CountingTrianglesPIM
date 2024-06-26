@@ -3,8 +3,13 @@
 
 #include <stdint.h>
 
-#define REVERSE_MAPPING_CODE 2147483647  //A high number that very unlikely will be used for something else
+//High numbers that very unlikely will be used for something else
+#define RESET_CODE 2147483646
+#define REVERSE_MAPPING_CODE 2147483647
+
 #define MIDDLE_HEAP_OFFSET 32*1024*1024
+
+#define APPEND_IN_DPU false
 
 //Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
 typedef struct {
