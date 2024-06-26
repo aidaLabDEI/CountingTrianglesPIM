@@ -97,22 +97,32 @@ int main() {
     //Locate the buffer in the WRAM for this tasklet each run
     void* wram_buffer_ptr = tasklets_buffer_ptrs[tasklet_id];
 
-    //Execute only if reverse mapping is triggered
-    //It makes use of the previous max node id and expects the most frequent nodes to be already present in WRAM
-    //The pointer to the sample was set correctly in the previous execution
-    if(execution_config.execution_code == REVERSE_MAPPING_CODE){
-        //If Misra-Gries is used
-        if(DPU_INPUT_ARGUMENTS.t != 0){
+    if(APPEND_IN_DPU){
+        //Execute only if reverse mapping is triggered
+        //It makes use of the previous max node id and expects the most frequent nodes to be already present in WRAM
+        //The pointer to the sample was set correctly in the previous execution
+        if(execution_config.execution_code == REVERSE_MAPPING_CODE){
+            //If Misra-Gries is used
+            if(DPU_INPUT_ARGUMENTS.t != 0){
 
-            //Split the workload equally among the tasklets
-            uint32_t edges_per_tasklet = edges_in_sample/NR_TASKLETS;
-            uint32_t from_edge = edges_per_tasklet * tasklet_id;
-            uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
+                //Split the workload equally among the tasklets
+                uint32_t edges_per_tasklet = edges_in_sample/NR_TASKLETS;
+                uint32_t from_edge = edges_per_tasklet * tasklet_id;
+                uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
 
-            //Most frequent nodes to be already loaded in WRAM
-            reverse_frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
-            barrier_wait(&sync_tasklets);
+                //Most frequent nodes to be already loaded in WRAM
+                reverse_frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
+                barrier_wait(&sync_tasklets);
+            }
+            return 0;
         }
+    }
+
+    if(execution_config.execution_code == RESET_CODE){
+        edges_in_sample = 0;
+        total_edges = 0;
+        global_index_to_save_sample = 0;
+        is_sample_full = false;
         return 0;
     }
 

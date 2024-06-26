@@ -13,6 +13,7 @@
 typedef struct{
     edge_t* batch;  //Pointer to the array containing the edges in the current batch for the DPU
     uint64_t edge_count_batch;  //Current number of edges in the batch for the DPU
+    uint64_t edge_count_batch_copy;
 }dpu_info_t;
 
 typedef struct{

@@ -193,6 +193,7 @@ int main(int argc, char* argv[]){
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
             dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch = 0;
+            dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch_copy = 0;
             dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(max_batch_size * sizeof(edge_t));
         }
     }
@@ -224,6 +225,8 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
+    create_batches_args_t create_batches_args[NR_THREADS];
+
     ////Variables that get updated for each update to the graph
     uint32_t edges_in_graph = 0;
     double edges_kept = 0;
@@ -243,9 +246,15 @@ int main(int argc, char* argv[]){
 
         execution_config_t execution_config;
 
-        if(k > 0 && update_idx > 0){
-            //Reverse the mapping of the most frequent nodes to allow using more precise data
-            execution_config = (execution_config_t){REVERSE_MAPPING_CODE, max_node_id};
+        if(APPEND_IN_DPU){
+            if(k > 0 && update_idx > 0){
+                //Reverse the mapping of the most frequent nodes to allow using more precise data
+                execution_config = (execution_config_t){REVERSE_MAPPING_CODE, max_node_id};
+                DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
+                DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
+            }
+        }else{
+            execution_config = (execution_config_t){RESET_CODE, max_node_id};
             DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
             DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
         }
@@ -263,7 +272,6 @@ int main(int argc, char* argv[]){
         close(file_fd);
 
         //Handle edges in different threads
-        create_batches_args_t create_batches_args[NR_THREADS];
         pthread_t threads[NR_THREADS];
 
         ////Start edge creation
@@ -328,10 +336,13 @@ int main(int argc, char* argv[]){
         //Launch the DPUs to count the triangles
         DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
 
-        ////Reset the batches (free the memory only at the end)
-        for(int th_id = 0; th_id < NR_THREADS; th_id++){
-            for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-                dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch = 0;
+        if(APPEND_IN_DPU){
+            ////Reset the batches (free the memory only at the end)
+            for(int th_id = 0; th_id < NR_THREADS; th_id++){
+                for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+                    dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch = 0;
+                    dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy = 0;
+                }
             }
         }
 
