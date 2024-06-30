@@ -112,9 +112,9 @@ int main() {
             uint32_t from_edge = edges_per_tasklet * tasklet_id;
             uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_sample : edges_per_tasklet * (tasklet_id+1);
 
-            //Most frequent nodes to be already loaded in WRAM
+            //Most frequent nodes needs to be already loaded in WRAM
             reverse_frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
-            barrier_wait(&sync_tasklets);
+            return 0;
         }
     }
 
@@ -205,7 +205,9 @@ int main() {
                         continue;
                     }
 
-                    batch_buffer_index = edges_to_copy;  //There are still edges to consider
+                    batch_buffer_index = edges_to_copy;
+                    batch_index_local += edges_to_copy;
+                    //There are still edges to consider
                 }else{
                     mutex_unlock(insert_into_update);
                 }
@@ -238,16 +240,13 @@ int main() {
     		float thres = ((float)DPU_INPUT_ARGUMENTS.sample_size)/total_edges;
 
             //Randomly decide if to replace or not an edge in the sample
-            //Threshold depends on the whole sample, replacement may happen in the update or in the old sample
-            if (u_rand < thres){
-                uint32_t random_index = rand_range(0, DPU_INPUT_ARGUMENTS.sample_size-1);
+            //Threshold depends on the whole sample, replacement may happen only in the update
+            //because replacements in the old sample would require sorting it again (too big of a mess)
+            if (u_rand < thres && edges_in_update > 0){
+                uint32_t random_index = rand_range(0, edges_in_update-1);
 
                 //Tasklet-safe
-                if(random_index < edges_in_update){
-                    mram_write(&current_edge, &temporary_sample_update[random_index], sizeof(current_edge));
-                }else{
-                    mram_write(&current_edge, &sample[random_index - edges_in_update], sizeof(current_edge));
-                }
+                mram_write(&current_edge, &temporary_sample_update[random_index], sizeof(current_edge));
             }
         }
 
@@ -302,7 +301,7 @@ int main() {
             uint32_t from_edge = edges_per_tasklet * tasklet_id;
             uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_old_sample : edges_per_tasklet * (tasklet_id+1);
 
-            //Transfer the most frequent nodes from the MRAM to the WRAM only during the first update
+            //Transfer the most frequent nodes from the MRAM to the WRAM
             if(tasklet_id == 0){
                 mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
             }
@@ -311,23 +310,29 @@ int main() {
             frequent_nodes_remapping(sample, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
             barrier_wait(&sync_tasklets);
 
-            //Remap also in the update
-            edges_per_tasklet = edges_in_update/NR_TASKLETS;
-            from_edge = edges_per_tasklet * tasklet_id;
-            to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_update : edges_per_tasklet * (tasklet_id+1);
+            if(edges_in_update != 0){
+                //Remap also in the update
+                edges_per_tasklet = edges_in_update/NR_TASKLETS;
+                from_edge = edges_per_tasklet * tasklet_id;
+                to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_update : edges_per_tasklet * (tasklet_id+1);
 
-            frequent_nodes_remapping(temporary_sample_update, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
-            barrier_wait(&sync_tasklets);
+                frequent_nodes_remapping(temporary_sample_update, from_edge, to_edge, wram_buffer_ptr, nr_top_nodes, top_frequent_nodes, execution_config.max_node_id);
+                barrier_wait(&sync_tasklets);
+            }
         }
 
-        //Sort the update and place the update right under the sample
-        //There is enough space because the maximum sample size limits
-        sort_sample(edges_in_update, temporary_sample_update, sample + edges_in_old_sample, wram_buffer_ptr, execution_config.max_node_id + DPU_INPUT_ARGUMENTS.t);
-        barrier_wait(&sync_tasklets);  //Wait for the sort to happen
+        if(edges_in_update != 0){
+            //Sort the update and place the update right under the sample
+            //There is enough space because the maximum sample size limits
+            sort_sample(edges_in_update, temporary_sample_update, sample + edges_in_old_sample, wram_buffer_ptr, execution_config.max_node_id + DPU_INPUT_ARGUMENTS.t);
+            barrier_wait(&sync_tasklets);  //Wait for the sort to happen
+        }
 
-        if(tasklet_id == 0){  //It would be more efficient to use multiple tasklets, but handling the synchronisation is a huge mess
+        //If the number of edges in the updates is zero, the merge will only move the sample to the right place
+        //It would be more efficient to use multiple tasklets, but handling the synchronisation is a huge mess
+        if(tasklet_id == 0){
             //Considering that only one tasklet is used, it's possible to take advantage of the WRAM buffers of the other tasklets
-            merge_sample_update(sample, edges_in_old_sample, temporary_sample_update, edges_in_sample, batch, tasklets_buffer_ptrs);
+            merge_sample_update(sample, edges_in_old_sample, sample + edges_in_old_sample, edges_in_update, batch, tasklets_buffer_ptrs);
         }
         barrier_wait(&sync_tasklets);  //Wait for the merge to happen
 
