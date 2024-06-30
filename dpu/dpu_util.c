@@ -4,6 +4,7 @@
 #include <alloc.h>  //Alloc heap in WRAM
 #include <defs.h>  //Get tasklet id
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include "dpu_util.h"
 #include "../common/common.h"
@@ -112,6 +113,7 @@ void reverse_frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_e
     }
 }
 
+void *temp_buffer_1 = NULL, *temp_buffer_2 = NULL;
 void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sample, __mram_ptr edge_t* update, uint32_t edges_in_update, __mram_ptr edge_t* new_sample, void** edge_buffers){
     if(me() != 0){
         return;
@@ -128,8 +130,14 @@ void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sa
         update_buffer = edge_buffers[2];
     }else{
         old_sample_buffer = edge_buffers[0];
-        new_sample_buffer = mem_alloc(WRAM_BUFFER_SIZE);  //There is enough space
-        update_buffer = mem_alloc(WRAM_BUFFER_SIZE);
+
+        //There is enough space
+        if(temp_buffer_1 == NULL && temp_buffer_2 == NULL){
+            temp_buffer_1 = mem_alloc(WRAM_BUFFER_SIZE);  //Allocate these only once
+            temp_buffer_2 = mem_alloc(WRAM_BUFFER_SIZE);
+        }
+        new_sample_buffer = temp_buffer_1;
+        update_buffer = temp_buffer_2;
     }
 
     uint32_t old_sample_edge_offset = 0;
@@ -161,7 +169,7 @@ void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sa
         edge_t current_old_sample_edge = old_sample_buffer[old_sample_edge_offset];
         edge_t current_update_edge = update[update_edge_offset];
 
-        if((current_old_sample_edge.u < current_update_edge.u) || 
+        if((current_old_sample_edge.u < current_update_edge.u) ||
             (current_old_sample_edge.u == current_update_edge.u && current_old_sample_edge.v < current_update_edge.v)){
 
             new_sample_buffer[new_sample_buffer_offset++] = current_old_sample_edge;
