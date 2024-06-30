@@ -246,18 +246,17 @@ int main(int argc, char* argv[]){
 
         execution_config_t execution_config;
 
-        if(APPEND_IN_DPU){
-            if(k > 0 && update_idx > 0){
-                //Reverse the mapping of the most frequent nodes to allow using more precise data
-                execution_config = (execution_config_t){REVERSE_MAPPING_CODE, max_node_id};
-                DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
-                DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
-            }
-        }else{
-            execution_config = (execution_config_t){RESET_CODE, max_node_id};
+        if(k > 0 && update_idx > 0){
+            //Reverse the mapping of the most frequent nodes to allow using more precise MisraGries data
+            execution_config = (execution_config_t){REVERSE_MAPPING_CODE, max_node_id};
             DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
             DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
         }
+
+        //Reset stats about the current update
+        execution_config = (execution_config_t){RESET_CODE, max_node_id};
+        DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
+        DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
 
         //Signal the DPUs to update the sample the next time they are launched. Encode the update_idx in it
         execution_config = (execution_config_t){2*update_idx, max_node_id};
@@ -336,13 +335,11 @@ int main(int argc, char* argv[]){
         //Launch the DPUs to count the triangles
         DPU_ASSERT(dpu_launch(dpu_set, DPU_ASYNCHRONOUS));
 
-        if(APPEND_IN_DPU){
-            ////Reset the batches (free the memory only at the end)
-            for(int th_id = 0; th_id < NR_THREADS; th_id++){
-                for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-                    dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch = 0;
-                    dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy = 0;
-                }
+        ////Reset the batches (free the memory only at the end)
+        for(int th_id = 0; th_id < NR_THREADS; th_id++){
+            for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
+                dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch = 0;
+                dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy = 0;
             }
         }
 
