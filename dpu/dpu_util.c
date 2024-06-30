@@ -166,8 +166,8 @@ void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sa
             update_buffer_offset = 0;
         }
 
-        edge_t current_old_sample_edge = old_sample_buffer[old_sample_edge_offset];
-        edge_t current_update_edge = update[update_edge_offset];
+        edge_t current_old_sample_edge = old_sample_buffer[old_sample_buffer_offset];
+        edge_t current_update_edge = update_buffer[update_buffer_offset];
 
         if((current_old_sample_edge.u < current_update_edge.u) ||
             (current_old_sample_edge.u == current_update_edge.u && current_old_sample_edge.v < current_update_edge.v)){
@@ -185,6 +185,7 @@ void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sa
         if(new_sample_buffer_offset == max_edges_buffer){
             mram_write(new_sample_buffer, &new_sample[new_sample_edge_offset], max_edges_buffer * sizeof(edge_t));
             new_sample_edge_offset += max_edges_buffer;
+            new_sample_buffer_offset = 0;
         }
     }
 
@@ -199,13 +200,14 @@ void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sa
             old_sample_buffer_offset = 0;
         }
 
-        new_sample_buffer[new_sample_buffer_offset++] = old_sample_buffer[old_sample_edge_offset];
+        new_sample_buffer[new_sample_buffer_offset++] = old_sample_buffer[old_sample_buffer_offset];
         old_sample_buffer_offset++;
         old_sample_edge_offset++;
 
         if(new_sample_buffer_offset == max_edges_buffer){
             mram_write(new_sample_buffer, &new_sample[new_sample_edge_offset], max_edges_buffer * sizeof(edge_t));
             new_sample_edge_offset += max_edges_buffer;
+            new_sample_buffer_offset = 0;
         }
     }
 
@@ -218,13 +220,14 @@ void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sa
             update_buffer_offset = 0;
         }
 
-        new_sample_buffer[new_sample_buffer_offset++] = update[update_edge_offset];
+        new_sample_buffer[new_sample_buffer_offset++] = update_buffer[update_buffer_offset];
         update_buffer_offset++;
         update_edge_offset++;
 
         if(new_sample_buffer_offset == max_edges_buffer){
             mram_write(new_sample_buffer, &new_sample[new_sample_edge_offset], max_edges_buffer * sizeof(edge_t));
             new_sample_edge_offset += max_edges_buffer;
+            new_sample_buffer_offset = 0;
         }
     }
     //Write the last edges
