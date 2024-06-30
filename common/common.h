@@ -9,7 +9,9 @@
 
 #define MIDDLE_HEAP_OFFSET 32*1024*1024
 
-#define APPEND_IN_DPU false
+//The single batches and the whole update must fit in half of the MRAM
+#define MAX_BATCH_TRANSFER_SIZE_BYTES 4*1024*1024
+#define MAX_UPDATE_SIZE_BYTES 28*1024*1024
 
 //Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
 typedef struct {
@@ -29,6 +31,9 @@ typedef struct {
     uint32_t u;
     uint32_t v;
 } edge_t;
+
+#define MAX_BATCH_TRANSFER_SIZE_EDGES (MAX_BATCH_TRANSFER_SIZE_BYTES / sizeof(edge_t))
+#define MAX_UPDATE_SIZE_EDGES (MAX_UPDATE_SIZE_BYTES / sizeof(edge_t))
 
 //Contains a pair of colors, representing the colors of an edge
 typedef struct {

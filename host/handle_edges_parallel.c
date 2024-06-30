@@ -209,8 +209,8 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
 
 void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* mutex, struct dpu_set_t* dpu_set, uint32_t update_idx){
 
-    //Limit transfers to 30MB
-    uint64_t max_edges_per_transfer = (30*1024*1024) / sizeof(edge_t);
+    //Limit transfers
+    uint64_t max_edges_per_transfer = MAX_BATCH_TRANSFER_SIZE_BYTES;
 
     //Determine the max amount of edges per batch that this thread needs to send
     uint32_t max_edges_to_send = 0;

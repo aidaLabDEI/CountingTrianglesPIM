@@ -1,6 +1,8 @@
 #include <stdint.h> //Fixed size integers
 #include <stdio.h>  //Standard output for debug functions
 #include <mram.h>  //Transfer data between WRAM and MRAM
+#include <alloc.h>  //Alloc heap in WRAM
+#include <defs.h>  //Get tasklet id
 #include <stdbool.h>
 
 #include "dpu_util.h"
@@ -108,6 +110,117 @@ void reverse_frequent_nodes_remapping(__mram_ptr edge_t* sample, uint32_t from_e
         mram_write(sample_buffer, &sample[from_edge], edges_in_sample_buffer * sizeof(edge_t));
         from_edge += edges_in_sample_buffer;
     }
+}
+
+void merge_sample_update(__mram_ptr edge_t* old_sample, uint32_t edges_in_old_sample, __mram_ptr edge_t* update, uint32_t edges_in_update, __mram_ptr edge_t* new_sample, void** edge_buffers){
+    if(me() != 0){
+        return;
+    }
+
+    uint32_t max_edges_buffer = WRAM_BUFFER_SIZE/sizeof(edge_t);
+
+    edge_t* old_sample_buffer;
+    edge_t* new_sample_buffer;
+    edge_t* update_buffer;
+    if(NR_TASKLETS >= 3){
+        old_sample_buffer = edge_buffers[0];
+        new_sample_buffer = edge_buffers[1];  //This function is called by only one tasklet, so the other buffers can be freely used
+        update_buffer = edge_buffers[2];
+    }else{
+        old_sample_buffer = edge_buffers[0];
+        new_sample_buffer = mem_alloc(WRAM_BUFFER_SIZE);  //There is enough space
+        update_buffer = mem_alloc(WRAM_BUFFER_SIZE);
+    }
+
+    uint32_t old_sample_edge_offset = 0;
+    uint32_t new_sample_edge_offset = 0;
+    uint32_t update_edge_offset = 0;
+
+    uint32_t old_sample_buffer_offset = max_edges_buffer;
+    uint32_t new_sample_buffer_offset = 0;
+    uint32_t update_buffer_offset = max_edges_buffer;
+
+    while(old_sample_edge_offset < edges_in_old_sample && update_edge_offset < edges_in_update){
+
+        if(old_sample_buffer_offset == max_edges_buffer){
+            uint32_t remaining_edges = edges_in_old_sample - old_sample_edge_offset;
+            uint32_t edges_to_copy = remaining_edges > max_edges_buffer ? max_edges_buffer : remaining_edges;
+
+            mram_read(&old_sample[old_sample_edge_offset], old_sample_buffer, edges_to_copy * sizeof(edge_t));
+            old_sample_buffer_offset = 0;
+        }
+
+        if(update_buffer_offset == max_edges_buffer){
+            uint32_t remaining_edges = edges_in_update - update_edge_offset;
+            uint32_t edges_to_copy = remaining_edges > max_edges_buffer ? max_edges_buffer : remaining_edges;
+
+            mram_read(&update[update_edge_offset], update_buffer, edges_to_copy * sizeof(edge_t));
+            update_buffer_offset = 0;
+        }
+
+        edge_t current_old_sample_edge = old_sample_buffer[old_sample_edge_offset];
+        edge_t current_update_edge = update[update_edge_offset];
+
+        if((current_old_sample_edge.u < current_update_edge.u) || 
+            (current_old_sample_edge.u == current_update_edge.u && current_old_sample_edge.v < current_update_edge.v)){
+
+            new_sample_buffer[new_sample_buffer_offset++] = current_old_sample_edge;
+            old_sample_buffer_offset++;
+            old_sample_edge_offset++;
+        }else{
+
+            new_sample_buffer[new_sample_buffer_offset++] = current_update_edge;
+            update_buffer_offset++;
+            update_edge_offset++;
+        }
+
+        if(new_sample_buffer_offset == max_edges_buffer){
+            mram_write(new_sample_buffer, &new_sample[new_sample_edge_offset], max_edges_buffer * sizeof(edge_t));
+            new_sample_edge_offset += max_edges_buffer;
+        }
+    }
+
+    //Finish the last edges in the old sample
+    while(old_sample_edge_offset < edges_in_old_sample){
+
+        if(old_sample_buffer_offset == max_edges_buffer){
+            uint32_t remaining_edges = edges_in_old_sample - old_sample_edge_offset;
+            uint32_t edges_to_copy = remaining_edges > max_edges_buffer ? max_edges_buffer : remaining_edges;
+
+            mram_read(&old_sample[old_sample_edge_offset], old_sample_buffer, edges_to_copy * sizeof(edge_t));
+            old_sample_buffer_offset = 0;
+        }
+
+        new_sample_buffer[new_sample_buffer_offset++] = old_sample_buffer[old_sample_edge_offset];
+        old_sample_buffer_offset++;
+        old_sample_edge_offset++;
+
+        if(new_sample_buffer_offset == max_edges_buffer){
+            mram_write(new_sample_buffer, &new_sample[new_sample_edge_offset], max_edges_buffer * sizeof(edge_t));
+            new_sample_edge_offset += max_edges_buffer;
+        }
+    }
+
+    while(update_edge_offset < edges_in_update){
+        if(update_buffer_offset == max_edges_buffer){
+            uint32_t remaining_edges = edges_in_update - update_edge_offset;
+            uint32_t edges_to_copy = remaining_edges > max_edges_buffer ? max_edges_buffer : remaining_edges;
+
+            mram_read(&update[update_edge_offset], update_buffer, edges_to_copy * sizeof(edge_t));
+            update_buffer_offset = 0;
+        }
+
+        new_sample_buffer[new_sample_buffer_offset++] = update[update_edge_offset];
+        update_buffer_offset++;
+        update_edge_offset++;
+
+        if(new_sample_buffer_offset == max_edges_buffer){
+            mram_write(new_sample_buffer, &new_sample[new_sample_edge_offset], max_edges_buffer * sizeof(edge_t));
+            new_sample_edge_offset += max_edges_buffer;
+        }
+    }
+    //Write the last edges
+    mram_write(new_sample_buffer, &new_sample[new_sample_edge_offset], new_sample_buffer_offset * sizeof(edge_t));
 }
 
 
