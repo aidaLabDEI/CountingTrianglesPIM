@@ -10,8 +10,8 @@
 #define MIDDLE_HEAP_OFFSET 32*1024*1024
 
 //The single batches and the whole update must fit in half of the MRAM
-#define MAX_BATCH_TRANSFER_SIZE_BYTES 8*1024*1024
-#define MAX_UPDATE_SIZE_BYTES 24*1024*1024
+#define MAX_BATCH_TRANSFER_SIZE_BYTES 4*1024*1024
+#define MAX_UPDATE_SIZE_BYTES 28*1024*1024
 
 //Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
 typedef struct {
