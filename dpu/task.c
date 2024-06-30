@@ -224,7 +224,7 @@ int main() {
             barrier_wait(&sync_tasklets);
         }
 
-        sort_sample(edges_in_sample, sample, wram_buffer_ptr, execution_config.max_node_id + t);
+        sort_sample(edges_in_sample, sample, wram_buffer_ptr, execution_config.max_node_id + DPU_INPUT_ARGUMENTS.t);
         barrier_wait(&sync_tasklets);  //Wait for the sort to happen
 
         //After the quicksort, some pointers change. Does not matter if set by all tasklets
