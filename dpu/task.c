@@ -163,7 +163,9 @@ int main() {
                         continue;
                     }
 
-                    batch_buffer_index = edges_to_copy;  //There are still edges to consider
+                    batch_buffer_index = edges_to_copy;
+                    batch_index_local += edges_to_copy;
+                    //There are still edges to consider
                 }else{
                     mutex_unlock(insert_into_sample);
                 }
