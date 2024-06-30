@@ -55,7 +55,7 @@ void* handle_edges_file(void* args_thread){
     uint32_t local_seed = args->seed + args->th_id;
 
     node_freq_hashtable_t mg_table;
-    if(args->k > 0){
+    if(args->update_idx == 0 && args->k > 0){
         mg_table = create_hashtable(args->k);
     }
 
@@ -104,7 +104,7 @@ void* handle_edges_file(void* args_thread){
            }
         }
 
-        if(args->k > 0){
+        if(args->update_idx == 0 && args->k > 0){
             update_top_frequency(&mg_table, node1);
             update_top_frequency(&mg_table, node2);
         }
@@ -115,7 +115,7 @@ void* handle_edges_file(void* args_thread){
 
     send_batches(args -> th_id, args -> dpu_info_array, args -> send_to_dpus_mutex, args -> dpu_set, args->update_idx);
 
-    if(args->k > 0){
+    if(args->update_idx == 0 && args->k > 0){
         //Select the top 2*t edges to return to the main thread
         //No need to return all top k if only a few are used
         for(uint32_t i = 0; i < 2 * args->t; i++){

@@ -306,7 +306,7 @@ int main(int argc, char* argv[]){
         DPU_ASSERT(dpu_sync(dpu_set));
 
         //Send top frequency only once
-        if(k > 0 && update_idx == 0){
+        if(update_idx == 0 && k > 0){
             node_frequency_t top_frequent_nodes[t];
             uint64_t nr_top_nodes = global_top_freq(top_freq_threads, top_frequent_nodes, t);
 
