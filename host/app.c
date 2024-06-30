@@ -193,7 +193,6 @@ int main(int argc, char* argv[]){
     for(int th_id = 0; th_id < NR_THREADS; th_id++){
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
             dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch = 0;
-            dpu_info_array[th_id*NR_DPUS + dpu_id].edge_count_batch_copy = 0;
             dpu_info_array[th_id*NR_DPUS + dpu_id].batch = (edge_t*) malloc(max_batch_size * sizeof(edge_t));
         }
     }
@@ -201,12 +200,6 @@ int main(int argc, char* argv[]){
     ////Prepare variables for threads that will create the sample
 
     coloring_params = get_hash_parameters();  //Global, shared with other source code file
-
-    //Improve the Misra Gries table each iteration, so do not reset it between updates
-    node_freq_hashtable_t mg_tables[NR_THREADS];
-    for(int th_id = 0; th_id < NR_THREADS; th_id++){
-        mg_tables[th_id] = create_hashtable(k);
-    }
 
     //Contains the most frequent nodes in the section of edges analysed by a single thread
     //Only top 2*t are kept considering that t are sent to the DPUs
@@ -247,7 +240,8 @@ int main(int argc, char* argv[]){
         execution_config_t execution_config;
 
         if(k > 0 && update_idx > 0){
-            //Reverse the mapping of the most frequent nodes to allow using more precise MisraGries data
+            //Reverse the mapping of the most frequent nodes to allow using the new maximum node
+            //It will not mess up the sorting of the old sample because values can only increase
             execution_config = (execution_config_t){REVERSE_MAPPING_CODE, max_node_id};
             DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
             DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));
@@ -290,7 +284,7 @@ int main(int argc, char* argv[]){
                 .th_id = th_id, .max_node_id = 0, .update_idx = update_idx,
                 .mmaped_file = mmaped_file, .file_size = file_stat.st_size, .from_char = from_char_in_file, .to_char = to_char_in_file,
                 .seed = seed, .p = p, .edges_kept = 0, .total_edges_thread = 0,
-                .k = k, .t = t, .top_freq = top_freq_threads[th_id], .mg_table = &mg_tables[th_id],
+                .k = k, .t = t, .top_freq = top_freq_threads[th_id],
                 .batch_size = max_batch_size, .colors = colors, .dpu_info_array = dpu_info_array,
                 .dpu_set = &dpu_set, .send_to_dpus_mutex = &send_to_dpus_mutex,
             };
@@ -311,12 +305,12 @@ int main(int argc, char* argv[]){
         //The threads launched the last batches, need to wait for them to be processed
         DPU_ASSERT(dpu_sync(dpu_set));
 
-        if(k > 0){
+        //Send top frequency only once
+        if(k > 0 && update_idx == 0){
             node_frequency_t top_frequent_nodes[t];
             uint64_t nr_top_nodes = global_top_freq(top_freq_threads, top_frequent_nodes, t);
 
-            uint32_t heap_offset = (update_idx%2 == 0) ? 0 : MIDDLE_HEAP_OFFSET;
-            DPU_ASSERT(dpu_broadcast_to(dpu_set, DPU_MRAM_HEAP_POINTER_NAME, heap_offset, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
+            DPU_ASSERT(dpu_broadcast_to(dpu_set, DPU_MRAM_HEAP_POINTER_NAME, 0, &top_frequent_nodes, sizeof(top_frequent_nodes), DPU_XFER_DEFAULT));
             DPU_ASSERT(dpu_broadcast_to(dpu_set, "nr_top_nodes", 0, &nr_top_nodes, sizeof(nr_top_nodes), DPU_XFER_DEFAULT));
         }
 
@@ -339,7 +333,6 @@ int main(int argc, char* argv[]){
         for(int th_id = 0; th_id < NR_THREADS; th_id++){
             for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
                 dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch = 0;
-                dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy = 0;
             }
         }
 
@@ -425,7 +418,6 @@ int main(int argc, char* argv[]){
     if(k > 0){
         for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
             free(top_freq_threads[th_id]);
-            delete_hashtable(&mg_tables[th_id]);
         }
     }
 }

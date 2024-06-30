@@ -293,16 +293,16 @@ int main() {
         __mram_ptr edge_t* temporary_sample_update = batch + MAX_BATCH_TRANSFER_SIZE_EDGES;
         uint32_t edges_in_old_sample = edges_in_sample - edges_in_update;
 
-        //If Misra-Gries is used, remap in the old sample and in the update
-        if(DPU_INPUT_ARGUMENTS.t != 0){
+        //If Misra-Gries is used, remap the update
+        if(DPU_INPUT_ARGUMENTS.t != 0 && edges_in_update > 0){
 
             //Split the workload equally among the tasklets
             uint32_t edges_per_tasklet = edges_in_old_sample/NR_TASKLETS;
             uint32_t from_edge = edges_per_tasklet * tasklet_id;
             uint32_t to_edge = (tasklet_id == NR_TASKLETS-1) ? edges_in_old_sample : edges_per_tasklet * (tasklet_id+1);
 
-            //Transfer the most frequent nodes from the MRAM to the WRAM
-            if(tasklet_id == 0){
+            //Transfer the most frequent nodes from the MRAM to the WRAM nly for the first update
+            if(tasklet_id == 0 && execution_config.execution_code == 1){
                 mram_read(top_frequent_nodes_MRAM, top_frequent_nodes, DPU_INPUT_ARGUMENTS.t * sizeof(node_frequency_t));
             }
             barrier_wait(&sync_tasklets);

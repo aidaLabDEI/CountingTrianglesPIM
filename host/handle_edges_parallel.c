@@ -54,6 +54,11 @@ void* handle_edges_file(void* args_thread){
     //Seed used for the local random number genetor
     uint32_t local_seed = args->seed + args->th_id;
 
+    node_freq_hashtable_t mg_table;
+    if(args->k > 0){
+        mg_table = create_hashtable(args->k);
+    }
+
     edge_t current_edge;
     while (file_char_counter < args->to_char) {
 
@@ -100,8 +105,8 @@ void* handle_edges_file(void* args_thread){
         }
 
         if(args->k > 0){
-            update_top_frequency(args->mg_table, node1);
-            update_top_frequency(args->mg_table, node2);
+            update_top_frequency(&mg_table, node1);
+            update_top_frequency(&mg_table, node2);
         }
 
         insert_edge_into_batches(current_edge, args -> dpu_info_array, args -> batch_size, args -> colors, args -> th_id,
@@ -117,20 +122,22 @@ void* handle_edges_file(void* args_thread){
             // Find the maximum element in unsorted array
             uint32_t max_idx = i;
             //Consider only valid entries
-            for(uint32_t j = i+1; j < args->mg_table->size; j++){
-                if(args->mg_table->table[j].frequency > args->mg_table->table[max_idx].frequency){
+            for(uint32_t j = i+1; j < mg_table.size; j++){
+                if(mg_table.table[j].frequency > mg_table.table[max_idx].frequency){
                   max_idx = j;
                 }
             }
 
-            args->top_freq[i] = args->mg_table->table[max_idx];
+            args->top_freq[i] = mg_table.table[max_idx];
 
             if(max_idx != i){
-                node_frequency_t temp = args->mg_table->table[max_idx];
-                args->mg_table->table[max_idx] = args->mg_table->table[i];
-                args->mg_table->table[i] = temp;
+                node_frequency_t temp = mg_table.table[max_idx];
+                mg_table.table[max_idx] = mg_table.table[i];
+                mg_table.table[i] = temp;
             }
         }
+
+        delete_hashtable(&mg_table);
     }
 
     pthread_exit(NULL);
@@ -215,7 +222,6 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
     //Determine the max amount of edges per batch that this thread needs to send
     uint32_t max_edges_to_send = 0;
     for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-        dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
         if(max_edges_to_send < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch){
             max_edges_to_send = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
         }
@@ -226,8 +232,8 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         //Size of the biggest remaining batch
         uint32_t max_remaining_edges_to_send = 0;
         for(int dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            if(max_remaining_edges_to_send < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy){
-                max_remaining_edges_to_send = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy;
+            if(max_remaining_edges_to_send < dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch){
+                max_remaining_edges_to_send = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
             }
         }
 
@@ -256,15 +262,15 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
         DPU_FOREACH(*dpu_set, dpu, dpu_id) {
 
             //If less data than the full remaining batch is sent (so the maximum allowed amount of data per transfer)
-            if(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy > max_edges_to_send){
+            if(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch > max_edges_to_send){
                 DPU_ASSERT(dpu_prepare_xfer(dpu, &max_edges_to_send));
 
             }else{
-                DPU_ASSERT(dpu_prepare_xfer(dpu, &dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy));
+                DPU_ASSERT(dpu_prepare_xfer(dpu, &dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch));
             }
         }
 
-        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy), DPU_XFER_DEFAULT));
+        DPU_ASSERT(dpu_push_xfer(*dpu_set, DPU_XFER_TO_DPU, "edges_in_batch", 0, sizeof(dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch), DPU_XFER_DEFAULT));
 
         DPU_ASSERT(dpu_launch(*dpu_set, DPU_ASYNCHRONOUS));
 
@@ -272,9 +278,9 @@ void send_batches(uint32_t th_id, dpu_info_t* dpu_info_array, pthread_mutex_t* m
 
         //Update the count for the remaining edges to send
         for(dpu_id = 0; dpu_id < NR_DPUS; dpu_id++){
-            uint32_t last_batch_size = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy;
+            uint32_t last_batch_size = dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch;
 
-            dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch_copy =
+            dpu_info_array[th_id * NR_DPUS + dpu_id].edge_count_batch =
                 last_batch_size >= max_edges_to_send ? last_batch_size - max_edges_to_send : 0;
         }
     }
