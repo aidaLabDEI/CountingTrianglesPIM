@@ -46,7 +46,7 @@ void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, edge_
 
     //Determine the number of edges in each partition of quicksort
 
-    edge_t pivot_prev = (edge_t){max_node_id, max_node_id};  //Best performance with starting pivot as high as possible
+    edge_t pivot_prev = (edge_t){max_node_id, max_node_id};  //Best performance with starting pivot at the highest node id present
     for (uint32_t i = NR_SPLITS/2; i > 0; i >>= 1) {
         edge_t pivot = (edge_t){pivot_prev.u >> 1, pivot_prev.v >> 1};  //Determine the pivot depending on the previous one
 
@@ -169,7 +169,6 @@ uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32
     uint32_t nr_left = i % EDGES_IN_BLOCK;
     uint32_t nr_right = (num_edges - j) % EDGES_IN_BLOCK;
 
-
     if (nr_left > 0) {
         mram_write(left_wram_cache, (__mram_ptr void*) (out + left_i), nr_left * sizeof(edge_t));
     }
@@ -180,7 +179,7 @@ uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32
 }
 
 /*Performs a sub-step of the MRAM buffer partitioning using WRAM caches.
-  Returns 1 if both caches are full, 2 if the left is and 3 if the right is.*/
+  Returns 1 if both caches are full, 2 if the left is full and 3 if the right is full.*/
 uint32_t mram_partition_step(edge_t* left_wram_cache, edge_t* right_wram_cache, uint64_t n_edges,
                          int64_t* i, int64_t* j, edge_t pivot) {
 
@@ -326,7 +325,7 @@ void sort_full(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t n_edges, 
 
                 i++;  //Increase one level
 
-                //If this level(after i++) is bigger than the previous one, swap them (execute before the smaller one. Tail "recursion")
+                //If this level (after i++) is bigger than the previous one, swap them (execute before the smaller one. Tail "recursion")
                 //It is guaranteed that 2^(max_levels) elements can be ordered
                 if(level_end[i] - level_start[i] > level_end[i-1] - level_start[i-1]){
                     uint32_t temp = level_start[i];
@@ -386,9 +385,9 @@ void quicksort_wram(edge_t* wram_edges_array, uint64_t num_edges) {
                 //Overwritten the current level. It will sort the right section
                 level_start[i] = local_start + p;
 
-                i++;  //Increse one level
+                i++;  //Increase one level
 
-                //If this level(after i++) is bigger than the previous one, swap them (execute before the smaller one. Tail "recursion")
+                //If this level (after i++) is bigger than the previous one, swap them (execute before the smaller one. Tail "recursion")
                 //It is guaranteed that 2^(max_levels) elements can be ordered
                 if(level_end[i] - level_start[i] > level_end[i-1] - level_start[i-1]){
                     uint32_t temp = level_start[i];

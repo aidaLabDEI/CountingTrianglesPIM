@@ -19,7 +19,7 @@
 //Variables set by the host
 __host dpu_arguments_t DPU_INPUT_ARGUMENTS;
 
-//When the execution code is 1, that means that the graph has ended,
+//When the execution code is 1, that means that the graph has been completely read,
 //the host has sent the value and the triangle counting can start
 __host execution_config_t execution_config = {0, 0};
 
@@ -70,7 +70,6 @@ MUTEX_INIT(insert_into_sample);  //Virtual insertion
 //It is not possible to use edges_in_sample to know where to save. This variable keeps track of the first
 //free index in the sample where it is possible to save data from the WRAM buffers
 uint32_t global_index_to_save_sample = 0;
-MUTEX_INIT(transfer_to_sample);  //Real transfer to the sample in the MRAM
 MUTEX_INIT(replace_in_sample);
 
 int main() {
@@ -111,13 +110,13 @@ int main() {
         edge_t* batch_buffer = (edge_t*) wram_buffer_ptr;
         uint32_t max_edges_in_batch_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t));
 
-        uint32_t batch_buffer_index = max_edges_in_batch_buffer;  //Allows for data to be transfered the first iteration
+        uint32_t batch_buffer_index = max_edges_in_batch_buffer;  //Allows for data to be transferred the first iteration
 
         //This is used to indicate to the single tasklet where to save its buffer in the sample, without requiring to have the transfer inside the mutex
         //It is determined considering the variable global_index_to_save_sample
         uint32_t local_index_to_save_sample = 0;
 
-        while(batch_index_local < batch_index_to){  //Until the end of the section of the batch is reached
+        while(batch_index_local < batch_index_to){  //Until the end of the section of the batch assigned to this tasklet is reached
 
             //Transfer some edges of the batch to the WRAM
             uint32_t edges_in_batch_buffer = 0;
@@ -172,7 +171,7 @@ int main() {
 
                 //If a tasklet reaches this point it means that the sample is now full
                 //It is necessary to wait for all tasklets to copy their edges (if any) in the sample
-                //This is necessary to be sure that all data is transfered before starting to do replacements
+                //This is necessary to be sure that all data is transferred before starting to do replacements
                 barrier_wait(&sync_replace_in_sample);
                 is_sample_full = true;
             }
@@ -231,7 +230,7 @@ int main() {
 
         //After the quicksort, some pointers change. Does not matter if set by all tasklets
         sample = DPU_MRAM_HEAP_POINTER;
-        AFTER_SAMPLE_HEAP_POINTER = (__mram_ptr void*)sample + edges_in_sample * sizeof(edge_t);  //Just a sum without sizeof because sample's type is edge_t*
+        AFTER_SAMPLE_HEAP_POINTER = (__mram_ptr void*)sample + edges_in_sample * sizeof(edge_t);
 
         //Each message will contain the local_unique_nodes
         messages[tasklet_id] = node_locations(sample, edges_in_sample, AFTER_SAMPLE_HEAP_POINTER, wram_buffer_ptr);

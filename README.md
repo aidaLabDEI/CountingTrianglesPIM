@@ -2,12 +2,12 @@
 
 ## Modyfing [Makefile](Makefile):
   - Change the number of tasklets per DPU by modifying `NR_TASKLETS`. The value should be a power of 2. The best performing configuration uses 16 tasklets.
-  - Change the number of available DPUs by modifying `NR_DPUS`. The number of DPUs to use **must** be a valid value, calculated given the number $C$ of colors used, using the formula `NR_DPUS = Binom(C+2, 3)`.
-  - Change the number of threads used by the host processor by modifying `NR_THREADS`. The best configuration uses a number of threads equal to the number of cores available.
+  - Change the number of available DPUs by modifying `NR_DPUS`. The number of DPUs to use should be a valid value, calculated given the number $C$ of colors used, using the formula `NR_DPUS = Binom(C+2, 3)`.
+  - Change the number of threads used by the host processor by modifying `NR_THREADS`. The best configuration uses a number of threads equal to the number of threads available in the host CPU.
 
 ## Execute the code:
 
-  To execute the code, it is necessary to run, inside the folder (bin) created after make, the following command:
+  To execute the code, it is necessary to run, inside the folder (bin) created after running `make`, the following command:
   ```
   ./app -s seed -M sample_size -p keep_percentage -k Misra_Gries_dictionary_size -t nr_most_frequent_nodes_sent -c nr_colors -f path_to_graph_file
   ```
