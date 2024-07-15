@@ -3,7 +3,17 @@
 
 #include <stdint.h>
 
-//Struct used to transfer starting arguments from the host to the DPU. Aligned to 8 bytes
+//High numbers that very unlikely will be used for something else
+#define RESET_CODE 2147483646
+#define REVERSE_MAPPING_CODE 2147483647
+
+#define MIDDLE_HEAP_OFFSET 32*1024*1024
+
+//The single batches and the whole update must fit in half of the MRAM
+#define MAX_BATCH_TRANSFER_SIZE_BYTES 4*1024*1024
+#define MAX_UPDATE_SIZE_BYTES 28*1024*1024
+
+//Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
 typedef struct {
     uint32_t seed;
     uint32_t sample_size;
@@ -21,6 +31,9 @@ typedef struct {
     uint32_t u;
     uint32_t v;
 } edge_t;
+
+#define MAX_BATCH_TRANSFER_SIZE_EDGES (MAX_BATCH_TRANSFER_SIZE_BYTES / sizeof(edge_t))
+#define MAX_UPDATE_SIZE_EDGES (MAX_UPDATE_SIZE_BYTES / sizeof(edge_t))
 
 //Contains a pair of colors, representing the colors of an edge
 typedef struct {

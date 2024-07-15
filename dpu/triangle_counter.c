@@ -1,6 +1,7 @@
 #include <stdlib.h>  //Various things
 #include <stdio.h>  //Mainly debug messages
 #include <mram.h>  //Transfer data between WRAM and MRAM. Access MRAM
+#include <barrier.h>  //Barrier for tasklets
 #include <mutex.h>  //Mutex for tasklets
 #include <alloc.h>  //Alloc heap in WRAM
 #include <defs.h>
@@ -10,10 +11,21 @@
 #include "locate_nodes.h"
 #include "../common/common.h"
 
-uint32_t global_sample_read_offset = 0;
+node_loc_t* bin_search_buffer_ptrs[NR_TASKLETS] = {NULL};
+
+uint32_t global_sample_read_offset;
 MUTEX_INIT(read_from_sample);
 
-uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, uint32_t num_locations, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, void* wram_buffer_ptr){
+BARRIER_INIT(sync_reset_triangle_counting, NR_TASKLETS);
+
+uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, uint32_t num_locations, __mram_ptr void* FREE_SPACE_HEAP_POINTER, void* wram_buffer_ptr){
+
+    //Reset value to handle a new update
+    if(me() == 0){
+        global_sample_read_offset = 0;
+    }
+    barrier_wait(&sync_reset_triangle_counting);
+
     uint32_t triangle_count = 0;
 
     //Create a buffer in the WRAM to read more than one edge from the sample
@@ -31,7 +43,10 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     //Given a buffer of size N bytes, the cycles needed for the binary search without a buffer are log2(N/8) * (77 + 0.5 * 8), with a buffer (77 + 0.5 * N)
     //A buffer gives better results with N between 24 and 960
     uint32_t max_node_locs_in_bin_search_buffer = 768 / sizeof(node_loc_t);
-    node_loc_t* bin_search_buffer = mem_alloc(max_node_locs_in_bin_search_buffer * sizeof(node_loc_t));
+    if(bin_search_buffer_ptrs[me()] == NULL){
+        bin_search_buffer_ptrs[me()] = mem_alloc(max_node_locs_in_bin_search_buffer * sizeof(node_loc_t));
+    }
+    node_loc_t* bin_search_buffer = bin_search_buffer_ptrs[me()];
     uint32_t node_locs_in_bin_search_buffer = 0;  //How many locations are actually loaded in the cache
 
     uint32_t local_sample_read_index;
@@ -75,7 +90,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
         uint32_t v = current_edge.v;
 
         //No need to find the u_info because the starting location is given by the address of the current edge
-        node_loc_t v_info = get_location_info(num_locations, v, AFTER_SAMPLE_HEAP_POINTER, bin_search_buffer, max_node_locs_in_bin_search_buffer, &node_locs_in_bin_search_buffer);
+        node_loc_t v_info = get_location_info(num_locations, v, FREE_SPACE_HEAP_POINTER, bin_search_buffer, max_node_locs_in_bin_search_buffer, &node_locs_in_bin_search_buffer);
 
         if(v_info.index_in_sample == -1){  //There is no other edge with v as first node
             continue;
@@ -180,7 +195,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     return triangle_count;
 }
 
-node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* AFTER_SAMPLE_HEAP_POINTER, node_loc_t* node_loc_buffer_ptr, uint32_t max_node_loc_in_buffer, uint32_t* node_locs_in_bin_search_buffer){
+node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr void* FREE_SPACE_HEAP_POINTER, node_loc_t* node_loc_buffer_ptr, uint32_t max_node_loc_in_buffer, uint32_t* node_locs_in_bin_search_buffer){
 
     int low = 0, high = unique_nodes - 1;
 
@@ -196,7 +211,7 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
             node_loc_t current_node;
 
             int mid = (low + high) >> 1;  //Divide by 2 with right shift
-            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + mid * sizeof(node_loc_t)), &current_node, sizeof(node_loc_t));  //Read the current node data from the MRAM
+            mram_read((__mram_ptr void*) (FREE_SPACE_HEAP_POINTER + mid * sizeof(node_loc_t)), &current_node, sizeof(node_loc_t));  //Read the current node data from the MRAM
 
             if (current_node.id == node_id) {
                 return current_node;
@@ -212,7 +227,7 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
             *node_locs_in_bin_search_buffer = (high - low + 1);
 
             //Search in the remaining elements
-            mram_read((__mram_ptr void*) (AFTER_SAMPLE_HEAP_POINTER + low * sizeof(node_loc_t)), node_loc_buffer_ptr, (*node_locs_in_bin_search_buffer) * sizeof(node_loc_t));  //Read the current node data from the MRAM
+            mram_read((__mram_ptr void*) (FREE_SPACE_HEAP_POINTER + low * sizeof(node_loc_t)), node_loc_buffer_ptr, (*node_locs_in_bin_search_buffer) * sizeof(node_loc_t));  //Read the current node data from the MRAM
 
             return get_location_info_WRAM(node_id, node_loc_buffer_ptr, *node_locs_in_bin_search_buffer);
         }
