@@ -201,7 +201,7 @@ int main(int argc, char* argv[]){
 
     coloring_params = get_hash_parameters();  //Global, shared with other source code file
 
-    //Contains the most frequent nodes in the section of edges analysed by a single thread
+    //Contains the most frequent nodes in the section of edges analyzed by a single thread
     //Only top 2*t are kept considering that t are sent to the DPUs
     node_frequency_t* top_freq_threads[NR_THREADS];
     for(uint32_t th_id = 0; th_id < NR_THREADS; th_id++){
@@ -241,7 +241,7 @@ int main(int argc, char* argv[]){
 
         if(k > 0 && update_idx > 0){
             //Reverse the mapping of the most frequent nodes to allow using the new maximum node
-            //It will not mess up the sorting of the old sample because values can only increase
+            //It will not mess up the sorting of the old sample because values can only increase when remapped
             execution_config = (execution_config_t){REVERSE_MAPPING_CODE, max_node_id};
             DPU_ASSERT(dpu_broadcast_to(dpu_set, "execution_config", 0, &execution_config, sizeof(execution_config), DPU_XFER_DEFAULT));
             DPU_ASSERT(dpu_launch(dpu_set, DPU_SYNCHRONOUS));

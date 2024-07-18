@@ -34,7 +34,7 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
     edge_t* sample_buffer = (edge_t*) wram_buffer_ptr;
     uint32_t edges_to_read = 0;
 
-    //Create a buffer in the WRAM of the sample with edges starting with u and v to speed up research
+    //Create a buffer in the WRAM of the sample with edges starting with u and v to speed up the research
     uint32_t max_edges_in_counting_sample_buffer = (WRAM_BUFFER_SIZE >> 3) / sizeof(edge_t);
     edge_t* u_counting_sample_buffer = (edge_t*) wram_buffer_ptr + max_edges_in_sample_buffer;
     edge_t* v_counting_sample_buffer = (edge_t*) wram_buffer_ptr + max_edges_in_sample_buffer + max_edges_in_counting_sample_buffer;
@@ -127,7 +127,6 @@ uint32_t count_triangles(__mram_ptr edge_t* sample, uint32_t edges_in_sample, ui
                 u_counting_sample_buffer_index = max_edges_in_counting_sample_buffer - u_edges_to_copy_from_sample_buffer;
 
                 //Make it seems like all the buffer was filled with important data, even though only the last part is
-                //It works because the useless data will not be used anymore
                 start_index_u_counting_sample_buffer = u_sample_index-u_counting_sample_buffer_index;
             }
 
@@ -234,7 +233,7 @@ node_loc_t get_location_info(uint32_t unique_nodes, uint32_t node_id, __mram_ptr
         }
     }
     //Dummy node informations when the node is not present. The only thing that makes this not valid is the number of neighbors at 0
-    return (node_loc_t){0,-1};
+    return (node_loc_t){0, -1};
 }
 
 node_loc_t get_location_info_WRAM(uint32_t node_id, node_loc_t* node_loc_buffer_ptr, uint32_t num_elements){
@@ -256,5 +255,5 @@ node_loc_t get_location_info_WRAM(uint32_t node_id, node_loc_t* node_loc_buffer_
         }
     }
     //Dummy node informations when the node is not present. The only thing that makes this not valid is the number of neighbors at 0
-    return (node_loc_t){0,-1};
+    return (node_loc_t){0, -1};
 }

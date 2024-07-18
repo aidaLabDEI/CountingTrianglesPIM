@@ -17,7 +17,7 @@ void sort_sample(uint32_t edges_in_sample, __mram_ptr edge_t* sample_from, __mra
 uint32_t mram_partitioning(__mram_ptr edge_t* in, __mram_ptr edge_t* out, uint32_t num_edges, edge_t* left_wram_cache, edge_t* right_wram_cache, edge_t pivot);
 
 /*Performs a sub-step of the MRAM buffer partitioning using WRAM caches.
-  Returns 1 if both caches are full, 2 if the left is and 3 if the right is.*/
+  Returns 1 if both caches are full, 2 if the left is full and 3 if the right is full.*/
 uint32_t mram_partition_step(edge_t* left_wram_cache, edge_t* right_wram_cache, uint64_t n_edges, int64_t* i, int64_t* j, edge_t pivot);
 
 /*Write the input partitions specified by indices_loc to the output locations specified by indices_off.*/

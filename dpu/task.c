@@ -149,13 +149,13 @@ int main() {
         edge_t* batch_buffer = (edge_t*) wram_buffer_ptr;
         uint32_t max_edges_in_batch_buffer = (WRAM_BUFFER_SIZE / sizeof(edge_t));
 
-        uint32_t batch_buffer_index = max_edges_in_batch_buffer;  //Allows for data to be transfered the first iteration
+        uint32_t batch_buffer_index = max_edges_in_batch_buffer;  //Allows for data to be transferred the first iteration
 
         //This is used to indicate to the single tasklet where to save its buffer in the update, without requiring to have the transfer inside the mutex
         //It is determined considering the variable global_index_to_save_update
         uint32_t local_index_to_save_update = 0;
 
-        while(batch_index_local < batch_index_to){  //Until the end of the section of the batch is reached
+        while(batch_index_local < batch_index_to){  //Until the end of the section of the batch assigned to this tasklet is reached
 
             //Transfer some edges of the batch to the WRAM
             uint32_t edges_in_batch_buffer = 0;
@@ -214,7 +214,7 @@ int main() {
 
                 //If a tasklet reaches this point it means that the sample or the update is now full
                 //It is necessary to wait for all tasklets to copy their edges (if any) in the update
-                //This is necessary to be sure that all data is transfered before starting to do replacements
+                //This is necessary to be sure that all data is transferred before starting to do replacements
                 barrier_wait(&sync_replace_in_update);
                 if(edges_in_sample == DPU_INPUT_ARGUMENTS.sample_size){
                     is_sample_full = true;
@@ -338,7 +338,7 @@ int main() {
 
         //After the quicksort, some pointers change
         if(tasklet_id == 0){
-            FREE_SPACE_HEAP_POINTER = (__mram_ptr void*) sample;  //Now the memory space where the unordered sample can be ovewritten
+            FREE_SPACE_HEAP_POINTER = (__mram_ptr void*) sample;  //Now the memory space where the unordered sample can be overwritten
             sample = (__mram_ptr void*) batch;  //Now the sample is placed where the batch was
         }
         barrier_wait(&sync_tasklets);

@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include "common.h"
 
-//Hash table with linear problem to avoid pointer chasing with linked lists and make use of cache as much as possible
+//Hash table with linear probing to avoid pointer chasing with linked lists and make use of cache as much as possible
 typedef struct{
     node_frequency_t* table;
 
@@ -13,13 +13,13 @@ typedef struct{
     uint32_t size;  //Size is the first prime number after 2*K -> Total number of cells, of which a maximum of k will be used
 
     uint32_t nr_elements;  //Number of elements currently saved. No more than k
-    uint32_t max_probing_distance;  //Saved the maximum linear probing distance to not serach for a non present value in all the table
+    uint32_t max_probing_distance;  //Saved the maximum linear probing distance to not search for a non-present value in all the table
 } node_freq_hashtable_t;
 
 //Returns an initialized hash table that can contain k
 node_freq_hashtable_t create_hashtable(uint32_t k);
 
-//Frees the memory occupied by the hastable
+//Frees the memory occupied by the hashtable
 void delete_hashtable(node_freq_hashtable_t* table);
 
 //Returns if a value is a prime number
