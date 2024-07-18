@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-//Struct used to transfer starting arguments from the host to the dpus. Aligned to 8 bytes
+//Struct used to transfer starting arguments from the host to the DPU. Aligned to 8 bytes
 typedef struct {
     uint32_t seed;
     uint32_t sample_size;

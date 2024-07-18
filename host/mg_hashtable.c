@@ -5,7 +5,7 @@
 #include "mg_hashtable.h"
 #include "common.h"
 
-node_freq_hashtable_t create_hashtable(uint32_t k){  //k is the maximum amount of values inside the hastable
+node_freq_hashtable_t create_hashtable(uint32_t k){  //k is the maximum amount of values inside the hashtable
     uint32_t size = first_prime_over(2*k);
 
     node_freq_hashtable_t new_table = (node_freq_hashtable_t) {NULL, k, size, 0, 0};

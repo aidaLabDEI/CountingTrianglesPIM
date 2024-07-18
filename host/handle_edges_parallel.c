@@ -51,7 +51,7 @@ void* handle_edges_file(void* args_thread){
         }
     }
 
-    //Seed used for the local random number genetor
+    //Seed used for the local random number generator
     uint32_t local_seed = args->seed + args->th_id;
 
     node_freq_hashtable_t top_freq;
@@ -152,10 +152,10 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
     //Considering the current way triplets are assigned to a DPU, to find the ids of the DPUs that will
     //handle the current edge, it is necessary to consider the cases (a, b, c3), (a, c2, b) and (c1, a, b) (not allowing for duplicates)
 
-    //For (a, b, c3), the first occurence has id:
+    //For (a, b, c3), the first occurrence has id:
     //[sum from x = 0 to (a-1) 0.5*(colors - x) * (colors - x + 1)] + 0.5 * (colors - a) * (colors - a + 1) - 0.5 * (colors - b) * (colors - b + 1)
     //This formula uses different Gauss sums that show up considering the creation of the triplets
-    //After the first occurence, the other ids are the following (+1) until c3 reaches the number of total colors
+    //After the first occurrence, the other ids are the following (+1) until c3 reaches the number of total colors
     uint32_t current_dpu_id = round((1.0/6) * (a*a*a  - 3*a*a*colors + a*(3*colors*colors-1) - 3*b*(b-2*colors-1)));
 
     for(uint32_t c3 = b; c3 < colors; c3++){  //Varying the third color
@@ -171,10 +171,10 @@ void insert_edge_into_batches(edge_t current_edge, dpu_info_t* dpu_info_array, u
         current_dpu_id++;
     }
 
-    //For (a, c2, b), the first occurence has id:
+    //For (a, c2, b), the first occurrence has id:
     //[sum from x = 0 to (a-1) 0.5*(colors - x) * (colors - x + 1)] + b - a
     //This formula uses different Gauss sums that show up considering the creation of the triplets
-    //After the first occurence, the other ids are determined adding (colors - 1 - c2)
+    //After the first occurrence, the other ids are determined adding (colors - 1 - c2)
 
     current_dpu_id = round((1.0/6) * a * (a*a - 3*a*(colors+1) + 3*colors*colors +6*colors + 2) -a +b);
 
