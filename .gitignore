@@ -58,3 +58,5 @@ bin/
 
 # Utility script
 setup.sh
+
+.vscode
