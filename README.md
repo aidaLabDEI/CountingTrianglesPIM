@@ -1,5 +1,9 @@
 # CountingTrianglePIM
 
+Please refer to the repository [PIM-TC](https://github.com/CMU-SAFARI/PIM-TC) for the most up-to-date version of the code.
+
+---
+
 The code was tested using the [UPMEM SDK version 2024.1.0](https://sdk.upmem.com/) on both real hardware and the provided functional model.
 
 ## Modifying the [Makefile](Makefile)
